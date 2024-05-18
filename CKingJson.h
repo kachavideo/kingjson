@@ -66,8 +66,8 @@ public:
     virtual int         SaveToFile(const char * pFile);
 
 protected:
-    PKINGJSON        findNode(PKINGJSON pNode, const char* pName, bool bChild);
-    PKINGJSON        findItem(PKINGJSON pNode, const char* pName, bool bChild);
+    PKINGJSON       findNode(PKINGJSON pNode, const char* pName, bool bChild);
+    PKINGJSON       findItem(PKINGJSON pNode, const char* pName, bool bChild);
 
     virtual int     parseNode(PKINGJSON pNode, char* pData, int nSize, bool bList);
     virtual int     fillValue(std::string& strText, const char* pText);
