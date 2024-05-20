@@ -17,6 +17,7 @@ CKingJson::CKingJson(void) {
 }
 
 CKingJson::~CKingJson(void) {
+    relaseNode(&m_kjsRoot);
 }
 
 int CKingJson::ParseFile(const char* pFile, int nFlag) {
@@ -34,38 +35,22 @@ int CKingJson::ParseFile(const char* pFile, int nFlag) {
         pBuff += 3;
         lSize -= 3;
     }
-    int nErr = ParseData(pBuff, lSize);
+    int nErr = ParseData(pBuff, lSize, nFlag);
     delete[]pData;
     return nErr;
 }
 
-int CKingJson::ParseData(const char* pData, int nSize) {
-    m_kjsRoot.lstItem.clear();
-    m_kjsRoot.lstNode.clear();
-    m_kjsRoot.lstList.clear();
+int CKingJson::ParseData(const char* pData, int nSize, int nFlag) {
+    relaseNode(&m_kjsRoot);
 
     char* pText = new char[nSize];
-    memset(pText, 0, nSize);
-    char* pDst  = pText;
-    char* pSrc  = (char *)pData;
-    while (pSrc - pData < nSize) {
-        if (*pSrc == '\"') {
-            *pDst++ = *pSrc++;
-            while (pSrc - pData < nSize) {
-                if (*pSrc == '\"' && *(pSrc - 1) != '\\') {
-                    break;
-                }
-                *pDst++ = *pSrc++;
-            }
-        }
-        if (*pSrc == ' ' || *pSrc == '\r' || *pSrc == '\n' || *pSrc == '\t') {
-            pSrc++;
-            continue;
-        }
-        *pDst++ = *pSrc++;
+    removeChar(pData, pText, nSize);
+    nSize = strlen(pText);
+    int nRC = parseJson(&m_kjsRoot, pText);
+    if (nFlag == 1) {
+        if (nSize != nRC) 
+            nRC = -1;
     }
-    nSize = pDst - pText;
-    int nRC = parseNode(&m_kjsRoot, pText, nSize, false);
     delete[]pText;
     return nRC;
 }
@@ -82,6 +67,14 @@ PKINGJSON CKingJson::FindItem(PKINGJSON pNode, const char* pName, bool bChild) {
     return findItem(pNode, pName, bChild);
 }
 
+PKINGJSON CKingJson::GetItem(PKINGJSON pNode, int nIndex) {
+    if (pNode == NULL)
+        pNode = &m_kjsRoot;
+    if (nIndex < 0 || nIndex >= pNode->lstItem.size())
+        return NULL;
+    return pNode->lstItem.at(nIndex);
+}
+
 const char* CKingJson::GetValue(PKINGJSON pNode, const char* pName) {
     return GetValue(pNode, pName, NULL);
 }
@@ -90,30 +83,22 @@ const char* CKingJson::GetValue(PKINGJSON pNode, const char* pName, const char* 
     if (pNode == NULL)
         pNode = &m_kjsRoot;
     PKINGJSON pItem = findItem(pNode, pName, false);
-    if (pItem != NULL)
-        return pItem->strData.c_str();
-    return pDefault;
+    return pItem != NULL ? pItem->strData.c_str() : pDefault;
 }
 
 int CKingJson::GetValueInt(PKINGJSON pNode, const char* pName, int nDefault) {
     const char* pValue = GetValue(pNode, pName, NULL);
-    if (pValue == NULL)
-        return nDefault;
-    return atoi(pValue);
+    return pValue == NULL ? nDefault : atoi(pValue);
 }
 
 double CKingJson::GetValueDbl(PKINGJSON pNode, const char* pName, double dDefault) {
     const char* pValue = GetValue(pNode, pName, NULL);
-    if (pValue == NULL)
-        return dDefault;
-    return atof(pValue);
+    return pValue == NULL ? dDefault : atof(pValue);
 }
 
 long long CKingJson::GetValueLng(PKINGJSON pNode, const char* pName, long long lDefault) {
     const char* pValue = GetValue(pNode, pName, NULL);
-    if (pValue == NULL)
-        return lDefault;
-    return atol(pValue);
+    return pValue == NULL ? lDefault : atol(pValue);
 }
 
 int CKingJson::GetItemNum(PKINGJSON pNode) {
@@ -123,95 +108,91 @@ int CKingJson::GetItemNum(PKINGJSON pNode) {
 }
 
 const char* CKingJson::GetItemTxt(PKINGJSON pNode, int nIndex, const char* pDefault) {
-    if (pNode == NULL)
-        pNode = &m_kjsRoot;
-    if (nIndex < 0 || nIndex >= pNode->lstItem.size())
-        return pDefault;
-    return pNode->lstItem.at(nIndex).strData.c_str();
+    PKINGJSON pItem = GetItem(pNode, nIndex);
+    return pItem == NULL ? pDefault : pItem->strData.c_str();
 }
 
 int CKingJson::GetItemInt(PKINGJSON pNode, int nIndex, int nDefault) {
-    if (pNode == NULL)
-        pNode = &m_kjsRoot;
-    if (nIndex < 0 || nIndex >= pNode->lstItem.size())
-        return nDefault;
-    return atoi(pNode->lstItem.at(nIndex).strData.c_str());
+    PKINGJSON pItem = GetItem(pNode, nIndex);
+    return pItem == NULL ? nDefault : atoi(pItem->strData.c_str());
 }
 
 double CKingJson::GetItemDbl(PKINGJSON pNode, int nIndex, double dDefault) {
-    if (pNode == NULL)
-        pNode = &m_kjsRoot;
-    if (nIndex < 0 || nIndex >= pNode->lstItem.size())
-        return dDefault;
-    return atof(pNode->lstItem.at(nIndex).strData.c_str());
+    PKINGJSON pItem = GetItem(pNode, nIndex);
+    return pItem == NULL ? dDefault : atof(pItem->strData.c_str());
 }
 
 long long CKingJson::GetItemLng(PKINGJSON pNode, int nIndex, long long lDefault) {
-    if (pNode == NULL)
-        pNode = &m_kjsRoot;
-    if (nIndex < 0 || nIndex >= pNode->lstItem.size())
-        return lDefault;
-    return atol(pNode->lstItem.at(nIndex).strData.c_str());
+    PKINGJSON pItem = GetItem(pNode, nIndex);
+    return pItem == NULL ? lDefault : atol(pItem->strData.c_str());
 }
 
 PKINGJSON CKingJson::AddNode(PKINGJSON pNode, const char* pName, bool bList) {
-    if (pName == NULL)
-        return NULL;
-    if (pNode == NULL)
-        pNode = &m_kjsRoot;
-    kingJson kjsNode;
-    kjsNode.pParent = pNode;
-    kjsNode.strName = pName;
-    if (bList) {
-        pNode->lstList.push_back(kjsNode);
-        return &pNode->lstList.back();
-    }
-    else {
-        pNode->lstNode.push_back(kjsNode);
-        return &pNode->lstNode.back();
-    }
+    return apendNode(pNode, pName, bList);
 }
 
 PKINGJSON CKingJson::AddItem(PKINGJSON pNode, const char* pName, const char* pValue) {
-    if (pName == NULL || pValue == NULL)
-        return NULL;
-    if (pNode == NULL)
-        pNode = &m_kjsRoot;
-    kingJson kjsItem;
-    kjsItem.pParent = pNode;
-    if (pName != NULL)
-        kjsItem.strName = pName;
-    if (pValue != NULL)
-        kjsItem.strData = pValue;
-    pNode->lstItem.push_back(kjsItem);
-    return &pNode->lstItem.back();
+    return apendItem(pNode, pName, pValue, true);
 }
 
 PKINGJSON CKingJson::AddItem(PKINGJSON pNode, const char* pName, int nValue) {
-    return AddItem(pNode, pName, std::to_string(nValue).c_str());
+    return apendItem(pNode, pName, std::to_string(nValue).c_str(), false);
 }
 
 PKINGJSON CKingJson::AddItem(PKINGJSON pNode, const char* pName, double dValue) {
-    return AddItem(pNode, pName, std::to_string(dValue).c_str());
+    return apendItem(pNode, pName, std::to_string(dValue).c_str(), false);
 }
 
 PKINGJSON CKingJson::AddItem(PKINGJSON pNode, const char* pName, long long lValue) {
-    return AddItem(pNode, pName, std::to_string(lValue).c_str());
+    return apendItem(pNode, pName, std::to_string(lValue).c_str(), false);
+}
+
+PKINGJSON CKingJson::AddItem(PKINGJSON pNode, int nIndex, const char* pValue, bool bString) {
+    if (pValue == NULL)
+        return NULL;
+    if (pNode == NULL)
+        pNode = &m_kjsRoot;
+    PKINGJSON pNewItem = new kingJson();
+    pNewItem->pParent = pNode;
+    pNewItem->strData = pValue;
+    pNewItem->bString = bString;
+    for (auto iter = pNode->lstItem.begin(); iter != pNode->lstItem.end(); iter++) {
+        if (nIndex-- <= 0) {
+            pNode->lstItem.insert(iter, pNewItem);
+            break;
+        }
+    }
+    if (nIndex > 0) 
+        pNode->lstItem.push_back(pNewItem);
+    return pNewItem;
+}
+
+PKINGJSON CKingJson::AddItem(PKINGJSON pNode, int nIndex, int nValue) {
+    return AddItem(pNode, nIndex, std::to_string(nValue).c_str(), false);
+}
+
+PKINGJSON CKingJson::AddItem(PKINGJSON pNode, int nIndex, double dValue) {
+    return AddItem(pNode, nIndex, std::to_string(dValue).c_str(), false);
+}
+
+PKINGJSON CKingJson::AddItem(PKINGJSON pNode, int nIndex, long long lValue) {
+    return AddItem(pNode, nIndex, std::to_string(lValue).c_str(), false);
 }
 
 int CKingJson::DelNode(PKINGJSON pNode, const char* pName, bool bList) {
-    if (pName == NULL)
+    PKINGJSON pFind = findNode(pNode, pName, false);
+    if (pFind == NULL)
         return -1;
-    if (pNode == NULL)
-        pNode = &m_kjsRoot;
-    std::vector<kingJson>* pList = bList ? &pNode->lstList : &pNode->lstNode;
+    relaseNode(pFind);
+    std::vector<kingJson*>* pList = bList ? &pNode->lstList : &pNode->lstNode;
     for (auto iter = pList->begin(); iter != pList->end(); iter++) {
-        if (iter->strName == pName) {
+        if ((*iter)== pFind) {
             pList->erase(iter);
-            return 1;
+            break;
         }
     }
-    return 0;
+    delete pFind;
+    return 1;
 }
 
 int CKingJson::DelItem(PKINGJSON pNode, const char* pName) {
@@ -219,21 +200,46 @@ int CKingJson::DelItem(PKINGJSON pNode, const char* pName) {
         return -1;
     if (pNode == NULL)
         pNode = &m_kjsRoot;
-    std::vector<kingJson>* pList = &pNode->lstItem;
+    std::vector<kingJson*>* pList = &pNode->lstItem;
     for (auto iter = pList->begin(); iter != pList->end(); iter++) {
-        if (iter->strName == pName) {
+        if ((*iter)->strName == pName) {
             pList->erase(iter);
+            delete (*iter);
             return 1;
         }
     }
     return 0;
 }
 
+int CKingJson::DelItem(PKINGJSON pNode, int nIndex) {
+    if (pNode == NULL)
+        pNode = &m_kjsRoot;
+    if (pNode->lstItem.empty())
+        return -1;
+    for (auto iter = pNode->lstItem.begin(); iter != pNode->lstItem.end(); iter++) {
+        if (nIndex-- <= 0) {
+            pNode->lstItem.erase(iter);
+            break;
+        }
+    }
+    if (nIndex > 0)
+        pNode->lstItem.pop_back();
+    return 0;
+}
+
+int CKingJson::DelNode(PKINGJSON pNode) {
+    if (pNode == NULL || pNode->pParent == NULL)
+        return 0;
+    relaseNode(pNode);
+    delNode(pNode, &pNode->pParent->lstNode);
+    delNode(pNode, &pNode->pParent->lstList);
+    return 1;
+}
+
 PKINGJSON CKingJson::ModItem(PKINGJSON pNode, const char* pName, const char* pValue) {
     PKINGJSON pFind = findItem(pNode, pName, false);
-    if (pFind != NULL) {
+    if (pFind != NULL) 
         pFind->strData = pValue;
-    }
     return pFind;
 }
 
@@ -249,6 +255,25 @@ PKINGJSON CKingJson::ModItem(PKINGJSON pNode, const char* pName, long long lValu
     return ModItem(pNode, pName, std::to_string(lValue).c_str());
 }
 
+PKINGJSON CKingJson::ModItem(PKINGJSON pNode, int nIndex, const char* pValue) {
+    PKINGJSON pFind = GetItem(pNode, nIndex);
+    if (pFind != NULL) 
+        pFind->strData = pValue;
+    return pFind;
+}
+
+PKINGJSON CKingJson::ModItem(PKINGJSON pNode, int nIndex, int nValue) {
+    return ModItem(pNode, nIndex, std::to_string(nValue).c_str());
+}
+
+PKINGJSON CKingJson::ModItem(PKINGJSON pNode, int nIndex, double dValue) {
+    return ModItem(pNode, nIndex, std::to_string(dValue).c_str());
+}
+
+PKINGJSON CKingJson::ModItem(PKINGJSON pNode, int nIndex, long long lValue) {
+    return ModItem(pNode, nIndex, std::to_string(lValue).c_str());
+}
+
 const char* CKingJson::FormatText(void) {
     m_strText = "";
     formatText(&m_kjsRoot, false, true);
@@ -260,6 +285,8 @@ int CKingJson::SaveToFile(const char* pFile) {
     if (!outFile.good())
         return -1;
     FormatText();
+    int nUtf8 = 0X00BFBBEF;
+    outFile.write((const char *)&nUtf8, 3);
     outFile.write(m_strText.c_str(), m_strText.length());
     return m_strText.length();;
 }
@@ -268,23 +295,23 @@ PKINGJSON CKingJson::findNode(PKINGJSON pNode, const char* pName, bool bChild) {
     if (pName == NULL)
         return NULL;
     for (auto& iter : pNode->lstNode) {
-        if (iter.strName == pName)
-            return &iter;
+        if (iter->strName == pName)
+            return iter;
     }
     for (auto& iter : pNode->lstList) {
-        if (iter.strName == pName)
-            return &iter;
+        if (iter->strName == pName)
+            return iter;
     }
     if (!bChild)
         return NULL;
     PKINGJSON pFind = NULL;
     for (auto& iter : pNode->lstNode) {
-        pFind = findNode(&iter, pName, true);
+        pFind = findNode(iter, pName, true);
         if (pFind != NULL)
             return pFind;
     }
     for (auto& iter : pNode->lstList) {
-        pFind = findNode(&iter, pName, true);
+        pFind = findNode(iter, pName, true);
         if (pFind != NULL)
             return pFind;
     }
@@ -295,152 +322,177 @@ PKINGJSON CKingJson::findItem(PKINGJSON pNode, const char* pName, bool bChild) {
     if (pName == NULL)
         return NULL;
     for (auto& iter : pNode->lstItem) {
-        if (iter.strName == pName)
-            return &iter;
+        if (iter->strName == pName)
+            return iter;
     }
     if (!bChild)
         return NULL;
-
     PKINGJSON pFind = NULL;
     for (auto& iter : pNode->lstItem) {
-        pFind = findNode(&iter, pName, true);
+        pFind = findItem(iter, pName, true);
         if (pFind != NULL)
             return pFind;
     }
     return NULL;
 }
 
-int CKingJson::parseNode(PKINGJSON pNode, char* pData, int nSize, bool bList) {
-    char* pText = pData;
-    char* pNext = pData;
-    if (*pText == '{' || *pText == '[') {
-        bList = *pText++ == '[' ? true : false;
-    }
-    kingJson    kjsNode;
-    kingJson    kjsItem;
-    std::string strName;
-    int nRest = nSize - (pText - pData);
-    int nErr  = 0;
-    while (pText - pData < nSize) {
-        if (*pText == '}' || *pText == ']') {
-            if (*(pText + 1) == ',')
-                return pText - pData + 2;
-            else
-                return pText - pData + 1;
-        }
-        // get item name
-        if (*pText != '\"')
-            return -1;
-        pText++;
-        pNext = pText;
-        while (pNext - pData < nSize) {
-            if (*pNext == '\"' && *(pNext - 1) != '\\') {
-                *pNext++ = 0;
-                break;
-            }
-            pNext++;
-        }
-        if (*pNext != ':') {
-            if (!bList)
-                return -1;
-            kjsItem.strName = "";
-            fillValue(kjsItem.strData, pText);
-            kjsItem.pParent = pNode;
-            pNode->lstItem.push_back(kjsItem);
-            if (*pNext == ',')
-                pNext++;
-            pText = pNext++;
-            continue;
-        }
-        strName = pText;
-
-        //get item data
-        pText = pNext + 1;
-        if (*pText == '{' || *pText == '[') {
-            bList = *pText == '[' ? true : false;
-            nRest = nSize - (pText - pData);
-            kjsNode.pParent = pNode;
-            kjsNode.strName = strName;
-            if (bList) {
-                pNode->lstList.push_back(kjsNode);
-                nErr = parseNode(&pNode->lstList.back(), pText, nRest, bList);
-            }
-            else {
-                pNode->lstNode.push_back(kjsNode);
-                nErr = parseNode(&pNode->lstNode.back(), pText, nRest, bList);
-            }
-            if (nErr < 0)
-                return nErr;
-            pText += nErr;
-        }
-        else {
-            pNext = pText + 1;
-            if (*pText == '\"') {
-                while (pNext - pData < nSize) {
-                    if (*pNext == '\"' && *(pNext - 1) != '\\') {
-                        pNext++;
-                        break;
-                    }
-                    pNext++;
-                }
-            }
-            if (*pNext == ',') {
-                if (*pText == '\"') {
-                    pText++;
-                    *(pNext - 1) = 0;
-                }
-                else {
-                    *pNext = 0;
-                }
-                kjsItem.pParent = pNode;
-                kjsItem.strName = strName;
-                fillValue(kjsItem.strData, pText);
-                pNode->lstItem.push_back(kjsItem);
-                pNext++;
-                pText = pNext++;
-            }
-            else if (*pNext == '}' || *pNext == ']') {
-                if (*pText == '\"') {
-                    pText++;
-                    *(pNext - 1) = 0;
-                }
-                else {
-                    *pNext = 0;
-                }
-                kjsItem.pParent = pNode;
-                kjsItem.strName = strName;
-                fillValue(kjsItem.strData, pText);
-                pNode->lstItem.push_back(kjsItem);
-                pNext++;
-                pText = pNext++;
-                if (*pText == ',') {
-                    pText++;
-                    pNext++;
-                }
-                return pText - pData;
-            }
+int CKingJson::delNode(PKINGJSON pNode, std::vector<kingJson*> * pList) {
+    int i = 0;
+    for (auto iter = pList->begin(); iter != pList->end(); iter++) {
+        if (pList->at(i++) == pNode) {
+            pList->erase(iter);
+            delete pNode;
+            return 1;
         }
     }
-    return pNext - pData;
+    return -1;
 }
 
-int CKingJson::fillValue(std::string& strText, const char* pText) {
-    const char * pMark = strstr(pText, "\\\"");
-    if (pMark == NULL) {
-        strText = pText;
-    }
-    else {
-        strText = "";
-        while (*pText != NULL) {
-            if (*pText == '\\' && *(pText + 1) == '\"') {
-                strText += "\"";
-                pText += 2;
-                continue;
+int CKingJson::parseJson(PKINGJSON pNode, char* pData) {
+    char*       pText = pData;
+    char*       pNext = pData;
+    char*       pName = NULL;
+    int         nErr  = 0;
+    if (*pText != '{' && *pText != '[')
+        return -1;
+    bool bList = *pText == '[' ? true : false;
+    pText++;
+    while (*pText != 0) {
+        if (*pText == '\"') {
+            nErr = parseText(pText, &pNext);
+            if (nErr <= 0)
+                return -1;
+            pText++;
+            if (bList) {
+                apendItem(pNode, NULL, pText, true);
+                pText = (*pNext == ',') ? pNext + 1 : pNext;
             }
-            strText += *pText++;
+            else {
+                if (*pNext++ != ':')
+                    return -1;
+                pName = pText;
+                pText = pNext;
+                if (*pText == '\"') {
+                    nErr = parseText(pText, &pNext);
+                    if (nErr <= 0)
+                        return -1;
+                    apendItem(pNode, pName, ++pText, true);
+                    pText = (*pNext == ',') ? pNext + 1 : pNext;
+                }
+                else if (*pText == '{' || *pText == '[') {
+                    PKINGJSON pNewNode = apendNode(pNode, pName, *pText == '[');
+                    nErr = parseJson(pNewNode, pText);
+                    if (nErr < 0)
+                        return nErr;
+                    pText += nErr;
+                }
+                else if (*pText == '}' || *pText == ']') {
+                    return (pText - pData) + (*(pText + 1) == ',' ? 2 : 1);
+                }
+                else {
+                    nErr = parseData(pText, &pNext);
+                    if (nErr <= 0)
+                        return -1;
+                    char cChar = *pNext; *pNext = 0;
+                    apendItem(pNode, pName, pText, false);
+                    *pNext = cChar;
+                    pText = (*pNext == ',') ? pNext + 1 : pNext;
+                }
+            }
+        }
+        else if (*pText == '{' || *pText == '[') {
+            PKINGJSON pNewNode = apendNode(pNode, pName, *pText == '[');
+            nErr = parseJson(pNewNode, pText);
+            if (nErr <= 0)
+                return -1;
+            pText += nErr;
+        }
+        else if (*pText == '}' || *pText == ']') {
+            return (pText - pData) + (*(pText + 1) == ',' ? 2 : 1);
+        }
+        else {
+            nErr = parseData(pText, &pNext);
+            if (nErr <= 0)
+                return -1;
+            char cChar = *pNext; *pNext = 0;
+            apendItem(pNode, pName, pText, false);
+            *pNext = cChar;
+            pText = (*pNext == ',') ? pNext + 1 : pNext;
         }
     }
-    return strText.length();
+    return 0;
+}
+
+int CKingJson::parseText(char* pText, char** ppNext) {
+    *ppNext = NULL;
+    char* pNext = ++pText;
+    while (*pNext != 0) {
+        if (*(pNext - 1) != '\\' && *pNext == '\"') {
+            *pNext++ = 0; *ppNext = pNext;
+            break;
+        }
+        pNext++;
+    }
+    return *ppNext == NULL ? 0 : pNext - pText;
+}
+
+int CKingJson::parseData(char* pText, char** ppNext) {
+    *ppNext = NULL;
+    char* pNext = pText;
+    while (*pNext++ != 0) {
+        if (*pNext == ',' || *pNext == '}' || *pNext == ']') {
+            *ppNext = pNext;
+            break;
+        }
+    }
+    return *ppNext == NULL? 0 : pNext - pText;
+}
+
+PKINGJSON CKingJson::apendItem(PKINGJSON pNode, const char* pName, const char* pData, bool bString) {
+    PKINGJSON pNewItem = new kingJson();
+    pNewItem->pParent = pNode;
+    if (pName != NULL) 
+        pNewItem->strName = pName;
+    if (isNodeList(pNode))
+        pNewItem->strName = "";
+    pNewItem->bString = bString;
+    if (bString) {
+        const char* pMark = strstr(pData, "\\\"");
+        if (pMark == NULL) {
+            pNewItem->strData = pData;
+        }
+        else {
+            while (*pData != NULL) {
+                if (*pData == '\\' && *(pData + 1) == '\"') {
+                    pNewItem->strData += "\""; pData += 2;
+                    continue;
+                }
+                pNewItem->strData += *pData++;
+            }
+        }
+    }
+    else {
+        pNewItem->strData = pData;
+    }
+    pNode->lstItem.push_back(pNewItem);
+    return pNewItem;
+}
+
+PKINGJSON CKingJson::apendNode(PKINGJSON pNode, const char* pName, bool bList) {
+    if (pNode == NULL)
+        pNode = &m_kjsRoot;
+    PKINGJSON pNewNode = new kingJson();
+    pNewNode->pParent = pNode;
+    pNewNode->bString = false;
+    if (pName != NULL)
+        pNewNode->strName = pName;
+    if (!bList) {
+        pNode->lstNode.push_back(pNewNode);
+    }
+    else {
+        pNode->lstList.push_back(pNewNode);
+    }
+    return pNewNode;
 }
 
 int CKingJson::formatText(PKINGJSON pNode, bool bList, bool bLast) {
@@ -452,14 +504,15 @@ int CKingJson::formatText(PKINGJSON pNode, bool bList, bool bLast) {
         m_strText += "\":";
     }
     m_strText += bList ? "[" : "{";
-    for (auto iter = pNode->lstItem.begin(); iter != pNode->lstItem.end(); iter++) {
+    for (auto & iter : pNode->lstItem) {
         if (iter->strName.length() > 0) {
             m_strText += "\"";
             m_strText += iter->strName;
             m_strText += "\":";
         }
         if (iter->strData.length() > 0) {
-            m_strText += "\"";
+            if (iter->bString)
+                m_strText += "\"";
             if (strchr(iter->strData.c_str(), '\"') == NULL) {
                 m_strText += iter->strData;
             }
@@ -471,28 +524,84 @@ int CKingJson::formatText(PKINGJSON pNode, bool bList, bool bLast) {
                         m_strText += iter->strData.at(i);
                 }
             }
-            m_strText += "\"";
+            if (iter->bString)
+                m_strText += "\"";
         }
         else {
             m_strText += "\"\"";
         }
-        if (nNodeSize > 0 || iter + 1 != pNode->lstItem.end())
+        if (nNodeSize > 0 || iter != pNode->lstItem.back())
             m_strText += ",";
     }
-    for (int i = 0; i < pNode->lstNode.size(); i++) {
-        if (i == pNode->lstNode.size() - 1)
-            formatText(&pNode->lstNode.at(i), false, true);
+    for (auto & iter : pNode->lstNode) {
+        if (iter == pNode->lstNode.back()) {
+            if (pNode->lstList.size() > 0)
+                formatText(iter, false, false);
+            else
+                formatText(iter, false, true);
+        }
         else
-            formatText(&pNode->lstNode.at(i), false, false);
+            formatText(iter, false, false);
     }
-    for (int i = 0; i < pNode->lstList.size(); i++) {
-        if (i == pNode->lstList.size() - 1)
-            formatText(&pNode->lstList.at(i), true, true);
+    for (auto& iter : pNode->lstList) {
+        if (iter == pNode->lstList.back())
+            formatText(iter, true, true);
         else
-            formatText(&pNode->lstList.at(i), true, false);
+            formatText(iter, true, false);
     }
     m_strText += bList ? "]" : "}";
     if (!bLast)
         m_strText += ",";
     return m_strText.length() - nLength;
+}
+
+int CKingJson::removeChar(const char* pData, char* pText, int nSize) {
+    char* pDst = pText;
+    char* pSrc = (char*)pData;
+    if (nSize > 0)
+       ((char*)pData)[nSize] = 0;
+    while (*pSrc != 0) {
+        if (*pSrc == '\"') {
+            *pDst++ = *pSrc++;
+            while (*pSrc != 0) {
+                if (*pSrc == '\"' && *(pSrc - 1) != '\\') 
+                    break;
+                *pDst++ = *pSrc++;
+            }
+        }
+        if (*pSrc == ' ' || *pSrc == '\r' || *pSrc == '\n' || *pSrc == '\t') {
+            pSrc++;
+            continue;
+        }
+        *pDst++ = *pSrc++;
+    }
+    *pDst = 0;
+    return pDst - pText;
+}
+
+bool CKingJson::isNodeList(PKINGJSON pNode) {
+    if (pNode->pParent == NULL)
+        return false;
+    for (auto& iter : pNode->pParent->lstList) {
+        if (iter == pNode)
+            return true;
+    }
+    return false;
+}
+
+int CKingJson::relaseNode(PKINGJSON pNode) {
+    for (auto& item : pNode->lstItem)
+        delete item;
+    pNode->lstItem.clear();
+    for (auto& iter : pNode->lstNode) {
+        relaseNode(iter);
+        delete iter;
+    }
+    pNode->lstNode.clear();
+    for (auto& iter : pNode->lstList) {
+        relaseNode(iter);
+        delete iter;
+    }
+    pNode->lstList.clear();
+    return 0;
 }
