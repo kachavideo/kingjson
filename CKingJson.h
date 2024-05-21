@@ -13,6 +13,7 @@
 #define __CKingJson_H__
 #include <string>
 #include <vector>
+#include <fstream>
 
 typedef struct kingJson {
     std::string             strName;
@@ -29,8 +30,9 @@ public:
     CKingJson(void);
     virtual ~CKingJson(void);
 
-    virtual int         ParseFile(const char* pFile, int nFlag);
     virtual int         ParseData(const char* pData, int nSize, int nFlag);
+    virtual int         OpenFileA(const char* pFile, int nFlag);
+    virtual int         OpenFileW(const wchar_t* pFile, int nFlag);
 
     virtual PKINGJSON   GetRoot(void) { return &m_kjsRoot; }
     virtual PKINGJSON   FindNode(PKINGJSON pNode, const char* pName, bool bChild);
@@ -77,6 +79,7 @@ public:
     virtual int         SaveToFile(const char * pFile);
 
 protected:
+    virtual int         openFile(std::ifstream* pFileStream, int nFlag);
     virtual PKINGJSON   findNode(PKINGJSON pNode, const char* pName, bool bChild);
     virtual PKINGJSON   findItem(PKINGJSON pNode, const char* pName, bool bChild);
     virtual int         delNode(PKINGJSON pNode, std::vector<kingJson*> * pList);
