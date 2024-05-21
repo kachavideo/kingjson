@@ -9,7 +9,6 @@
     2024-05-05		kacha video			Create file
 
 *******************************************************************************/
-#include <fstream>
 #include "CKingJson.h"
 
 CKingJson::CKingJson(void) {
@@ -20,26 +19,6 @@ CKingJson::~CKingJson(void) {
     relaseNode(&m_kjsRoot);
 }
 
-int CKingJson::ParseFile(const char* pFile, int nFlag) {
-    std::ifstream inFile(pFile, std::ios_base::binary);
-    if (!inFile.good())
-        return -1;
-    inFile.seekg(0, inFile.end);
-    size_t lSize = inFile.tellg();
-    inFile.seekg(0, inFile.beg);
-    char* pData = new char[lSize + 1];
-    inFile.read(pData, lSize);
-    pData[lSize] = 0;
-    char* pBuff = pData;
-    if (pData[0] == (char)0XEF && pData[1] == (char)0XBB && pData[2] == (char)0XBF) {
-        pBuff += 3;
-        lSize -= 3;
-    }
-    int nErr = ParseData(pBuff, lSize, nFlag);
-    delete[]pData;
-    return nErr;
-}
-
 int CKingJson::ParseData(const char* pData, int nSize, int nFlag) {
     relaseNode(&m_kjsRoot);
 
@@ -48,11 +27,25 @@ int CKingJson::ParseData(const char* pData, int nSize, int nFlag) {
     nSize = strlen(pText);
     int nRC = parseJson(&m_kjsRoot, pText);
     if (nFlag == 1) {
-        if (nSize != nRC) 
+        if (nSize != nRC)
             nRC = -1;
     }
     delete[]pText;
     return nRC;
+}
+
+int CKingJson::OpenFileA(const char* pFile, int nFlag) {
+    std::ifstream inFile(pFile, std::ios_base::binary);
+    if (!inFile.good())
+        return -1;
+    return openFile(&inFile, nFlag);
+}
+
+int CKingJson::OpenFileW(const wchar_t* pFile, int nFlag) {
+    std::ifstream inFile(pFile, std::ios_base::binary);
+    if (!inFile.good())
+        return -1;
+    return openFile(&inFile, nFlag);
 }
 
 PKINGJSON CKingJson::FindNode(PKINGJSON pNode, const char* pName, bool bChild) {
@@ -289,6 +282,24 @@ int CKingJson::SaveToFile(const char* pFile) {
     outFile.write((const char *)&nUtf8, 3);
     outFile.write(m_strText.c_str(), m_strText.length());
     return m_strText.length();;
+}
+
+int CKingJson::openFile(std::ifstream* pFileStream, int nFlag) {
+    pFileStream->seekg(0, pFileStream->end);
+    size_t lSize = pFileStream->tellg();
+    pFileStream->seekg(0, pFileStream->beg);
+    char* pData = new char[lSize + 1];
+    pFileStream->read(pData, lSize);
+    pFileStream->close();
+    pData[lSize] = 0;
+    char* pBuff = pData;
+    if (pData[0] == (char)0XEF && pData[1] == (char)0XBB && pData[2] == (char)0XBF) {
+        pBuff += 3;
+        lSize -= 3;
+    }
+    int nErr = ParseData(pBuff, lSize, nFlag);
+    delete[]pData;
+    return nErr;
 }
 
 PKINGJSON CKingJson::findNode(PKINGJSON pNode, const char* pName, bool bChild) {
