@@ -37,7 +37,9 @@ public:
     virtual PKINGJSON   GetRoot(void) { return &m_kjsRoot; }
     virtual PKINGJSON   FindNode(PKINGJSON pNode, const char* pName, bool bChild);
     virtual PKINGJSON   FindItem(PKINGJSON pNode, const char* pName, bool bChild);
+    virtual PKINGJSON   FindItem(PKINGJSON pNode, const char* pData);
     virtual PKINGJSON   GetItem(PKINGJSON pNode, int nIndex);
+    virtual PKINGJSON   GetList(PKINGJSON pNode, int nIndex);
 
     virtual const char* GetValue(PKINGJSON pNode, const char* pName);
     virtual const char* GetValue(PKINGJSON pNode, const char* pName, const char * pDefault);
@@ -45,6 +47,7 @@ public:
     virtual double      GetValueDbl(PKINGJSON pNode, const char* pName, double dDefault);
     virtual long long   GetValueLng(PKINGJSON pNode, const char* pName, long long lDefault);
 
+    virtual int         GetListNum(PKINGJSON pNode);
     virtual int         GetItemNum(PKINGJSON pNode);
     virtual const char* GetItemTxt(PKINGJSON pNode, int nIndex, const char* pDefault);
     virtual int         GetItemInt(PKINGJSON pNode, int nIndex, int nDefault);
@@ -75,6 +78,9 @@ public:
     virtual PKINGJSON   ModItem(PKINGJSON pNode, int nIndex, double dValue);
     virtual PKINGJSON   ModItem(PKINGJSON pNode, int nIndex, long long lValue);
 
+    virtual int         SortItem(PKINGJSON pNode, bool bName, bool bASC);
+    virtual int         SortNode(PKINGJSON pNode, bool bASC);
+
     virtual const char* FormatText(void);
     virtual int         SaveToFile(const char * pFile);
 
@@ -92,7 +98,6 @@ protected:
 
     virtual int         formatText(PKINGJSON pNode, bool bList, bool bLast);
     virtual int         removeChar(const char * pData, char * pText, int nSize);
-    virtual bool        isNodeList(PKINGJSON pNode);
     virtual int         relaseNode(PKINGJSON pNode);
 
 protected:
