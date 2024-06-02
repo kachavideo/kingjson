@@ -1,9 +1,9 @@
 # kingjson
-This is a simple and powerful tool to parse or create json data.
+This is a fast, simple and powerful tool to parse, modify, create json file.
 
 # parse json
 1. CKingJson kingJson;
-2. kingJson.ParseFile("d:/data/data.json", 0);
+2. kingJson.OpenFileA("d:/data/data.json", 0);
 3. const char * pValue = kingJson.GetValue(NULL, "name", NULL);
 
 # create json
@@ -13,13 +13,13 @@ This is a simple and powerful tool to parse or create json data.
 
 # modify json
 1. CKingJson kingJson;
-2. kingJson.ParseFile("d:/data/data.json", 0);
+2. kingJson.OpenFileA("d:/data/data.json", 0);
 3. PKINGJSON pNode = kingJson.AddNode(NULL, "product", false);
 4. kingJson.DelItem(pNode, "value");
 5. kingJson.ModItem(pNode, "value", 1234);
 
 # export json
 1. create json.
-2. const char * pText = kingJson.FormatTxt();
-3. kingJson.SaveToFile("d:/temp/data.json");
+2. const char * pText = kingJson.FormatTxt(NULL);
+3. kingJson.SaveToFile(NULL, "d:/temp/data.json");
    
