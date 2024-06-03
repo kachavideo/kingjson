@@ -14,16 +14,27 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define KSON_TYPE_TEXT    0X0001
-#define KSON_TYPE_LIST    0X0001
+#define KSON_TYPE_TEXT          0X0001
+#define KSON_TYPE_LIST          0X0001
 
-#define KSON_SET_COUNT    32768
-#define KSON_NUM_MAX      0X7FFFFFFF
+#define KSON_SET_COUNT          32768
+#define KSON_NUM_MAX            0X7FFFFFFF
 
-#define KSON_SKIP_FORMAT_CHAR while(*pText == ' ' || *pText == '\r' || *pText == '\n' || *pText == '\t')pText++
-#define KSON_FIND_NEXTOF_TEXT pNext = ++pText; while(*pNext != '\"' || *(pNext - 1) == '\\') { pNext++; } *pNext++ = 0;
-#define KSON_FIND_NEXTOF_DATA pNext = pText+1; while (*pNext != ',' && *pNext != '}' && *pNext != ']') { pNext++; }
+#define KSON_SKIP_FORMAT_CHAR while(*pText == ' ' || *pText == '\r' || *pText == '\n' || *pText == '\t') pText++
+#define KSON_FIND_NEXTOF_TEXT pNext = ++pText; while((*pNext != '\"' && *pNext != 0) || *(pNext - 1) == '\\') { pNext++; } *pNext++ = 0;
+#define KSON_FIND_NEXTOF_DATA pNext = pText+1; while (*pNext != ',' && *pNext != '}' && *pNext != ']' && *pNext != 0) { pNext++; }
 #define KSON_FILL_FORMAT_TEXT *pTextPos++ = '\"'; while (*pTextTmp != 0) *pTextPos++ = *pTextTmp++; *pTextPos++ = '\"'; *pTextPos++ = ':';
+
+#define KSON_FIND_NEXTOF_TEXT1          \
+    pNext = ++pText;                    \
+    while (true) {                      \
+        pNext = strchr(pNext, '\"');    \
+        if (pNext == NULL)              \
+            return -1;                  \
+        if (*(pNext - 1) != '\\') {     \
+            *pNext++ = 0; break;  }     \
+        pNext++;                        \
+    }                                   \
 
 typedef struct ksonItem {
     char *      pName = NULL;
@@ -155,6 +166,7 @@ protected:
     ksonNode*       m_pTxtNode = NULL;
     char*           m_pTextMem = NULL;
     int             m_nTextNum = 0;
+    int             m_nNodeDep = 0;
 
     char*           m_pTextFmt = NULL;
     char*           m_pTextPos = NULL;

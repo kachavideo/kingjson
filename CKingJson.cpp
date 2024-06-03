@@ -26,23 +26,31 @@ CKingJson::~CKingJson(void) {
 }
 
 PKSONNODE CKingJson::ParseData(const char* pData, int nSize, int nFlag) {
+    if (pData == NULL || nSize <= 1)
+        return NULL;
     relaseNode(&m_ksonRoot);
     relaseSets();
     if (pData != m_pTextMem) {
-        if (m_pTextMem != NULL)
+        if (m_pTextMem != NULL && (m_nTextNum < nSize || m_nTextNum > nSize * 2)) {
             delete[]m_pTextMem;
-        m_nTextNum = nSize + 1;
-        m_pTextMem = new char[m_nTextNum];
+            m_pTextMem = NULL;
+        }
+        if(m_pTextMem == NULL) {
+            m_nTextNum = nSize + 1;
+            m_pTextMem = new char[m_nTextNum];
+        }
         memcpy(m_pTextMem, pData, nSize);
         m_pTextMem[nSize] = 0;
     }
     char* pBuff = m_pTextMem;
-    if (m_pTextMem[0] == (char)0XEF && m_pTextMem[1] == (char)0XBB && m_pTextMem[2] == (char)0XBF)
+    if (m_pTextMem[0] == (char)0XEF && m_pTextMem[1] == (char)0XBB && m_pTextMem[2] == (char)0XBF) {
         pBuff += 3; nSize -= 3;
+    }
+    m_nNodeDep = 1;
     if (pBuff[0] == '[')
         m_ksonRoot.nFlag = KSON_TYPE_LIST;
     int nRC = parseJson(&m_ksonRoot, pBuff);
-    if (nRC <= 0 || (nFlag == 1 && (nSize - nRC) > 4)) 
+    if (nRC <= 0 || m_nNodeDep != 0 || (nFlag == 1 && (nSize - nRC) > 4))
         return NULL;
     m_nTextAlloc = nSize;
     return &m_ksonRoot;
@@ -648,6 +656,8 @@ int CKingJson::parseJson(PKSONNODE pNode, char* pData) {
     char*   pName = NULL;
     bool    bList = false;
     int     nErr  = 0;
+    if (m_nNodeDep > 2000)
+        return -1;
     KSON_SKIP_FORMAT_CHAR;
     if (*pText != '{' && *pText != '[')
         return -1;
@@ -656,30 +666,27 @@ int CKingJson::parseJson(PKSONNODE pNode, char* pData) {
     while (*pText != 0) {
         KSON_SKIP_FORMAT_CHAR;
         if (*pText == '\"') {
-            KSON_FIND_NEXTOF_TEXT;
+            KSON_FIND_NEXTOF_TEXT1;
             if (bList) {
                 if (appendItem(pNode, NULL, pText, true) == NULL)
                     return -1;
                 pText = (*pNext == ',') ? pNext + 1 : pNext;
-                KSON_SKIP_FORMAT_CHAR;
             }
             else {
-                if (*pNext++ != ':')
-                    return -1;
-                pName = pText;
-                pText = pNext;
+                if (*pNext++ != ':') return -1;
+                pName = pText; pText = pNext;
                 KSON_SKIP_FORMAT_CHAR;
                 if (*pText == '\"') {
-                    KSON_FIND_NEXTOF_TEXT;
+                    KSON_FIND_NEXTOF_TEXT1;
                     if (appendItem(pNode, pName, pText, true) == NULL)
                         return -1;
                     pText = pNext;
                     if (*pNext == ',') {
                         *pNext = 0; pText = pNext + 1;
                     }
-                    KSON_SKIP_FORMAT_CHAR;
                 }
                 else if (*pText == '{' || *pText == '[') {
+                    KSON_SKIP_FORMAT_CHAR;
                     PKSONNODE pNewNode = appendNode(pNode, pName, *pText == '[');
                     if (pNewNode == NULL)
                         return -1;
@@ -689,11 +696,11 @@ int CKingJson::parseJson(PKSONNODE pNode, char* pData) {
                     pText += nErr;
                 }
                 else if (*pText == '}' || *pText == ']') {
-                    *pText = 0;
-                    KSON_SKIP_FORMAT_CHAR;
+                    m_nNodeDep--; *pText = 0;
                     return (int)((pText - pData) + (*(pText + 1) == ',' ? 2 : 1));
                 }
                 else {
+                    KSON_SKIP_FORMAT_CHAR;
                     KSON_FIND_NEXTOF_DATA;
                     if (appendItem(pNode, pName, pText, false) == NULL)
                         return -1;
@@ -705,6 +712,7 @@ int CKingJson::parseJson(PKSONNODE pNode, char* pData) {
             }
         }
         else if (*pText == '{' || *pText == '[') {
+            KSON_SKIP_FORMAT_CHAR;
             PKSONNODE pNewNode = appendNode(pNode, pName, *pText == '[');
             if (pNewNode == NULL)
                 return -1;
@@ -714,10 +722,11 @@ int CKingJson::parseJson(PKSONNODE pNode, char* pData) {
             pText += nErr;
         }
         else if (*pText == '}' || *pText == ']') {
-            *pText = 0;
+            m_nNodeDep--; *pText = 0;
             return (int)((pText - pData) + (*(pText + 1) == ',' ? 2 : 1));
         }
         else {
+            KSON_SKIP_FORMAT_CHAR;
             KSON_FIND_NEXTOF_DATA;
             if (appendItem(pNode, pName, pText, false) == NULL)
                 return -1;
@@ -746,6 +755,7 @@ PKSONITEM CKingJson::appendItem(PKSONNODE pNode, char* pName, char* pData, bool 
 }
 
 PKSONNODE CKingJson::appendNode(PKSONNODE pNode, char* pName, bool bList) {
+    m_nNodeDep++;
     if ((m_nNodeCount % KSON_SET_COUNT) == 0) 
         if (addNodeSet() < 0) return NULL;
     PKSONNODE pNewNode = m_pWorkNodeSet->pNode[(m_nNodeCount++) % KSON_SET_COUNT];
@@ -830,17 +840,16 @@ int CKingJson::relaseNode(PKSONNODE pNode) {
         }
         pItem = pItem->pNext;
     }
-    pNode->pHead = NULL;
-
+    pNode->pHead = NULL; pNode->pItem = NULL;
     if (pNode->pName != NULL && (pNode->pName < m_pTextMem || pNode->pName > m_pTextMem + m_nTextNum)) {
-        m_nTextAlloc -= ksonStrLen(pNode->pName); delete[]pNode->pName;
+        m_nTextAlloc -= ksonStrLen(pNode->pName); delete[]pNode->pName; pNode->pName = NULL;
     }
     PKSONNODE pHead = GetHeadNode(pNode);
     while (pHead != NULL) {
         relaseNode(pHead);
         pHead = pHead->pNext;
     }
-    pNode->pNode = NULL;
+    pNode->pNode = NULL; pNode->pPrev = NULL; pNode->pNext = NULL;
     return 0;
 }
 
@@ -931,9 +940,9 @@ int CKingJson::ksonCompItemData(const void* arg1, const void* arg2) {
 }
 
 int CKingJson::ksonStrLen(const char* pText) {
-    register int*   pTail = (int*)pText;
-    register int    nText = 0;
-    register int    nSize = 0;
+    int*   pTail = (int*)pText;
+    int    nText = 0;
+    int    nSize = 0;
     while (true) {
         nText = *pTail;
         if (!(nText & 0xff000000) || !(nText & 0xff0000) || !(nText & 0xff00) || !(nText & 0xff))
