@@ -17,12 +17,11 @@
 #define KSON_TYPE_TEXT          0X0001
 #define KSON_TYPE_LIST          0X0001
 
-#define KSON_SET_COUNT          32768
 #define KSON_NUM_MAX            0X7FFFFFFF
 
 #define KSON_SKIP_FORMAT_CHAR while(*pText == ' ' || *pText == '\r' || *pText == '\n' || *pText == '\t') pText++
 #define KSON_FIND_NEXTOF_TEXT pNext = ++pText; while((*pNext != '\"' && *pNext != 0) || *(pNext - 1) == '\\') { pNext++; } *pNext++ = 0;
-#define KSON_FIND_NEXTOF_DATA pNext = pText+1; while (*pNext != ',' && *pNext != '}' && *pNext != ']' && *pNext != 0) { pNext++; }
+#define KSON_FIND_NEXTOF_DATA pNext = pText+1; while (*pNext != ',' && *pNext != '}' && *pNext != ']' && *pNext != 0) { pNext++; } pText = pNext; if (*pNext == ',') { *pNext = 0; pText = pNext + 1; }
 #define KSON_FILL_FORMAT_TEXT *pTextPos++ = '\"'; while (*pTextTmp != 0) *pTextPos++ = *pTextTmp++; *pTextPos++ = '\"'; *pTextPos++ = ':';
 
 #define KSON_FIND_NEXTOF_TEXT1          \
@@ -149,17 +148,16 @@ protected:
 
 protected:
     typedef struct itemSet {
-        int         nSize = KSON_SET_COUNT;
         char*       pBuff = NULL;
         PKSONITEM*  pItem = NULL;
         itemSet*    pNext = NULL;
     } *PITEMSET;
     typedef struct nodeSet {
-        int         nSize = KSON_SET_COUNT;
         char*       pBuff = NULL;
         PKSONNODE*  pNode = NULL;
         nodeSet*    pNext = NULL;
     } *PNODESET;
+    int m_nSetSize = 32768;
 
 protected:
     ksonNode        m_ksonRoot;
