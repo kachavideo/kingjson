@@ -78,7 +78,7 @@ public:
     virtual bool        IsValueTrue(PKSONNODE pNode, const char* pName, bool bTure);
     virtual bool        IsValueNull(PKSONNODE pNode, const char* pName, bool bNull);
 
-    virtual int         GetListNum(PKSONNODE pNode);
+    virtual int         GetNodeNum(PKSONNODE pNode);
     virtual int         GetItemNum(PKSONNODE pNode);
     virtual const char* GetItemTxt(PKSONNODE pNode, int nIndex, const char* pDefault);
     virtual int         GetItemInt(PKSONNODE pNode, int nIndex, int nDefault);

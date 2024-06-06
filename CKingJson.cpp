@@ -9,7 +9,7 @@
     2024-05-05		kacha video			Create file
 
 *******************************************************************************/
-#include <string.h>
+#include <stdint.h>
 #include <stdio.h>
 #include "CKingJson.h"
 
@@ -143,7 +143,7 @@ bool CKingJson::IsValueNull(PKSONNODE pNode, const char* pName, bool bNull) {
     return pValue == NULL ? bNull : !strcmp(pValue, "null");
 }
 
-int CKingJson::GetListNum(PKSONNODE pNode) {
+int CKingJson::GetNodeNum(PKSONNODE pNode) {
     if (pNode == NULL) pNode = &m_ksonRoot;
     int nNodeSize = 0;
     PKSONNODE pHead = GetHeadNode(pNode);
@@ -964,9 +964,9 @@ int CKingJson::ksonCompItemData(const void* arg1, const void* arg2) {
 }
 
 int CKingJson::ksonStrLen(const char* pText) {
-    int*   pTail = (int*)pText;
-    int    nText = 0;
-    int    nSize = 0;
+    uint32_t*   pTail = (uint32_t*)pText;
+    uint32_t    nText = 0;
+    uint32_t    nSize = 0;
     while (true) {
         nText = *pTail;
         if (!(nText & 0xff000000) || !(nText & 0xff0000) || !(nText & 0xff00) || !(nText & 0xff))
