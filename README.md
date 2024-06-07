@@ -1,4 +1,5 @@
 # Introduction
+A very simple json parser, bangJson, it has 195 lines code only.
 A fast, simple and powerful tool to parse, modify, create json data.
 
 # Performance
