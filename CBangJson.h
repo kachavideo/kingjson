@@ -13,6 +13,8 @@
 #define BSON_TYPE_LIST          0X0020
 #define BSON_TYPE_ITEM          0X0040
 
+#define BSON_MAX_DEEPS          2000
+
 typedef struct bsonNode {
     std::string             strName;
     std::string             strData;
@@ -37,7 +39,6 @@ protected:
     virtual PBSONNODE   searchNode(PBSONNODE pNode, const char* pName, bool bChild);
     virtual int         formatJson(PBSONNODE pNode);
     virtual int         deleteNode(PBSONNODE pNode);
-
 
 protected:
     PBSONNODE       m_pRoot = NULL;

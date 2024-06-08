@@ -10,7 +10,7 @@ CBangJson::~CBangJson(void) {
 }
 
 PBSONNODE CBangJson::Parser(const char* pData, int nSize, int nFlag) {
-    if (pData == NULL || nSize <= 2) return NULL;
+    if (pData == NULL || nSize < 2) return NULL;
     if (m_pRoot != NULL) Delete(m_pRoot);
     m_pRoot = new bsonNode();
     char* pText = new char[nSize + 1];
@@ -30,6 +30,7 @@ PBSONNODE CBangJson::Search(PBSONNODE pNode, const char* pName, bool bChild) {
 
 const char* CBangJson::Format(PBSONNODE pNode, int* pSize) {
     if (pNode == NULL) return NULL;
+    m_sText = "";
     formatJson(pNode);
     if (pSize != NULL)
         *pSize = m_sText.length();
@@ -60,7 +61,7 @@ int CBangJson::parserData(PBSONNODE pNode, char* pData) {
     char*   pName = NULL;
     bool    bList = false;
     int     nErr = 0;
-    if (m_nDeep > 2000)
+    if (m_nDeep > BSON_MAX_DEEPS)
         return -1;
     BANG_SKIP_FORMAT_CHAR;
     if (*pText != '{' && *pText != '[')
