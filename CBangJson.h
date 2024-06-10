@@ -13,6 +13,11 @@
 #define BSON_TYPE_LIST          0X0020
 #define BSON_TYPE_ITEM          0X0040
 
+#define BSON_TYPE_NAME          0X1000
+#define BSON_TYPE_DATA          0X2000
+
+#define BSON_TYPE_UTF8          0X4000
+
 #define BSON_MAX_DEEPS          2000
 
 typedef struct bsonNode {
@@ -35,7 +40,9 @@ public:
 
 protected:
     virtual int         parserData(PBSONNODE pNode, char* pData);
-    virtual PBSONNODE   createNode(PBSONNODE pNode, char* pName, char * pData, int nSize, uint32_t uType);
+    virtual PBSONNODE   createNode(PBSONNODE pNode, char* pName, int nNameLen, char * pData, int nDataLen, int nType);
+    virtual int         convertTxt(std::string& strText, char* pData, int nSize);
+    virtual uint32_t    convertNum(const char* pText);
     virtual PBSONNODE   searchNode(PBSONNODE pNode, const char* pName, bool bChild);
     virtual int         formatJson(PBSONNODE pNode);
     virtual int         deleteNode(PBSONNODE pNode);

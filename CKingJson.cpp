@@ -49,7 +49,7 @@ PKSONNODE CKingJson::ParseData(const char* pData, int nSize, int nFlag) {
     m_nSetSize = ((nSize / 1048576) + 1) * 1024;
     m_nNodeDep = 1;
     if (pBuff[0] == '[')
-        m_ksonRoot.nFlag = KSON_TYPE_LIST;
+        m_ksonRoot.nFlag = KSON_NODE_LIST;
     int nRC = parseJson(&m_ksonRoot, pBuff, false);
     if (nRC <= 0 || m_nNodeDep != 0 || (nFlag == 1 && (nSize - nRC) > 4))
         return NULL;
@@ -108,38 +108,52 @@ PKSONNODE CKingJson::GetList(PKSONNODE pNode, int nIndex) {
     return NULL;
 }
 
-const char* CKingJson::GetValue(PKSONNODE pNode, const char* pName) {
-    return GetValue(pNode, pName, NULL);
+const char* CKingJson::GetValue(PKSONITEM pItem) {
+    if (pItem == NULL || pItem->pData == NULL)
+        return NULL;
+    if (!(pItem->nFlag & BSON_TEXT_UTF8)) {
+        convertTxt(pItem->pData);
+        pItem->nFlag |= BSON_TEXT_UTF8;
+    }
+    return pItem->pData;
 }
 
-const char* CKingJson::GetValue(PKSONNODE pNode, const char* pName, const char* pDefault) {
+const char* CKingJson::GetValue(PKSONNODE pNode, const char* pName, bool bChild) {
+    return GetValue(pNode, pName, bChild, NULL);
+}
+
+const char* CKingJson::GetValue(PKSONNODE pNode, const char* pName, bool bChild, const char* pDefault) {
     if (pNode == NULL) pNode = &m_ksonRoot;
-    PKSONITEM pItem = findItem(pNode, pName, true, false);
+    PKSONITEM pItem = findItem(pNode, pName, bChild, false);
+    if (pItem != NULL && pItem->pData != NULL && !(pItem->nFlag & BSON_TEXT_UTF8)) {
+        convertTxt(pItem->pData);
+        pItem->nFlag |= BSON_TEXT_UTF8;
+    }
     return pItem != NULL ? (pItem->pData == NULL ? pDefault : pItem->pData) : pDefault;
 }
 
-int CKingJson::GetValueInt(PKSONNODE pNode, const char* pName, int nDefault) {
-    const char* pValue = GetValue(pNode, pName, NULL);
+int CKingJson::GetValueInt(PKSONNODE pNode, const char* pName, bool bChild, int nDefault) {
+    const char* pValue = GetValue(pNode, pName, bChild, NULL);
     return pValue == NULL ? nDefault : atoi(pValue);
 }
 
-double CKingJson::GetValueDbl(PKSONNODE pNode, const char* pName, double dDefault) {
-    const char* pValue = GetValue(pNode, pName, NULL);
+double CKingJson::GetValueDbl(PKSONNODE pNode, const char* pName, bool bChild, double dDefault) {
+    const char* pValue = GetValue(pNode, pName, bChild, NULL);
     return pValue == NULL ? dDefault : atof(pValue);
 }
 
-long long CKingJson::GetValueLng(PKSONNODE pNode, const char* pName, long long lDefault) {
-    const char* pValue = GetValue(pNode, pName, NULL);
+long long CKingJson::GetValueLng(PKSONNODE pNode, const char* pName, bool bChild, long long lDefault) {
+    const char* pValue = GetValue(pNode, pName, bChild, NULL);
     return pValue == NULL ? lDefault : atoll(pValue);
 }
 
-bool CKingJson::IsValueTrue(PKSONNODE pNode, const char* pName, bool bTure) {
-    const char* pValue = GetValue(pNode, pName, NULL);
+bool CKingJson::IsValueTrue(PKSONNODE pNode, const char* pName, bool bChild, bool bTure) {
+    const char* pValue = GetValue(pNode, pName, bChild, NULL);
     return pValue == NULL ? bTure : !strcmp(pValue, "true");
 }
 
-bool CKingJson::IsValueNull(PKSONNODE pNode, const char* pName, bool bNull) {
-    const char* pValue = GetValue(pNode, pName, NULL);
+bool CKingJson::IsValueNull(PKSONNODE pNode, const char* pName, bool bChild, bool bNull) {
+    const char* pValue = GetValue(pNode, pName, bChild, NULL);
     return pValue == NULL ? bNull : !strcmp(pValue, "null");
 }
 
@@ -430,10 +444,10 @@ const char* CKingJson::FormatText(PKSONNODE pNode, int* pSize) {
     memset(m_pTextFmt, 0, nTextSize);
     m_pTextPos = m_pTextFmt;
     if (pNode != &m_ksonRoot) 
-        *m_pTextPos++ = (pNode->nFlag & KSON_TYPE_LIST) ? '[' : '{';
+        *m_pTextPos++ = (pNode->nFlag & KSON_NODE_LIST) ? '[' : '{';
     formatText(pNode);
     if (pNode != &m_ksonRoot)
-        *m_pTextPos++ = (pNode->nFlag & KSON_TYPE_LIST) ? ']' : '}';
+        *m_pTextPos++ = (pNode->nFlag & KSON_NODE_LIST) ? ']' : '}';
     if (pSize != NULL)
         *pSize = (int)(m_pTextPos - m_pTextFmt);
     return m_pTextFmt;
@@ -680,7 +694,7 @@ int CKingJson::parseJson(PKSONNODE pNode, char* pData, bool bNewNode) {
     char*   pName = NULL;
     bool    bList = false;
     int     nErr  = 0;
-    if (m_nNodeDep > 2000)
+    if (m_nNodeDep > BSON_MAX_DEEPS)
         return -1;
     KSON_SKIP_FORMAT_CHAR;
     if (*pText != '{' && *pText != '[')
@@ -805,6 +819,92 @@ PKSONNODE CKingJson::appendNode(PKSONNODE pNode, char* pName, bool bList) {
     return m_pSetNode++;
 }
 
+int CKingJson::convertTxt(char* pData) {
+    char* pText = pData;
+    char* pNext = pData;
+    uint32_t    uWord = 0;
+    uint32_t    uNext = 0;
+    uint8_t     uMark = 0;
+    uint8_t     uPost = 0;
+    int         nUtf8 = 0;
+    while (*pNext != 0) {
+        if (*pNext == '\\' && *(pNext + 1) == 'u') {
+            uWord = convertNum(pNext + 2); pNext += 6;
+            if ((uWord >= 0xDC00) && (uWord <= 0xDFFF)) {
+                memcpy(pText, pNext, 6); pText += 6;
+                continue;
+            }
+            else if ((uWord >= 0xD800) && (uWord <= 0xDBFF)) {
+                uNext = convertNum(pNext + 2); pNext += 6;
+                if ((uWord >= 0xDC00) && (uWord <= 0xDFFF)) {
+                    memcpy(pText, pNext, 6); pText += 6;
+                    continue;
+                }
+                uWord = 0x10000 + (((uWord & 0x3FF) << 10) | (uNext & 0x3FF));
+            }
+            if (uWord < 0x80) {
+                nUtf8 = 1;
+            }
+            else if (uWord < 0x800) {
+                nUtf8 = 2;
+                uMark = 0xC0; // 11000000 
+            }
+            else if (uWord < 0x10000) {
+                nUtf8 = 3;
+                uMark = 0xE0; // 11100000 
+            }
+            else if (uWord <= 0x10FFFF) {
+                nUtf8 = 4;
+                uMark = 0xF0; // 11110000 
+            }
+            for (uPost = (nUtf8 - 1); uPost > 0; uPost--) {
+                pText[uPost] = (char)((uWord | 0x80) & 0xBF);
+                uWord >>= 6;
+            }
+            if (nUtf8 > 1)
+                pText[0] = (char)((uWord | uMark) & 0xFF);
+            else
+                pText[0] = (char)(uWord & 0x7F);
+            pText += nUtf8;
+        }
+        else {
+            *pText++ = *pNext++;
+        }
+    }
+    *pText = 0;
+    return 1;
+}
+
+uint32_t CKingJson::convertNum(const char* pText) {
+    uint32_t uText = *(uint32_t*)pText;
+    uint32_t uWord = 0;
+    if ((uText & 0XFF000000) >= 0X30000000 && (uText & 0XFF000000) <= 0X39000000)
+        uWord += (((uText & 0XFF000000) - 0X30000000) >> 24);
+    else if ((uText & 0XFF000000) >= 0X41000000 && (uText & 0XFF000000) <= 0X6000000)
+        uWord += (((uText & 0XFF000000) - 0X37000000) >> 24);
+    else if ((uText & 0XFF000000) >= 0X61000000 && (uText & 0XFF000000) <= 0X66000000)
+        uWord += (((uText & 0XFF000000) - 0X57000000) >> 24);
+    if ((uText & 0XFF0000) >= 0X300000 && (uText & 0XFF0000) <= 0X390000)
+        uWord += (((uText & 0XFF0000) - 0X300000) >> 12);
+    else if ((uText & 0XFF0000) >= 0X410000 && (uText & 0XFF0000) <= 0X600000)
+        uWord += (((uText & 0XFF0000) - 0X370000) >> 12);
+    else if ((uText & 0XFF0000) >= 0X610000 && (uText & 0XFF0000) <= 0X660000)
+        uWord += (((uText & 0XFF0000) - 0X570000) >> 12);
+    if ((uText & 0XFF00) >= 0X3000 && (uText & 0XFF00) <= 0X3900)
+        uWord += (((uText & 0XFF00) - 0X3000) >> 0);
+    else if ((uText & 0XFF00) >= 0X4100 && (uText & 0XFF00) <= 0X6000)
+        uWord += (((uText & 0XFF00) - 0X3700) >> 0);
+    else if ((uText & 0XFF00) >= 0X6100 && (uText & 0XFF00) <= 0X6600)
+        uWord += (((uText & 0XFF00) - 0X5700) >> 0);
+    if ((uText & 0XFF) >= 0X30 && (uText & 0XFF) <= 0X39)
+        uWord += (((uText & 0XFF) - 0X30) << 12);
+    else if ((uText & 0XFF) >= 0X41 && (uText & 0XFF) <= 0X60)
+        uWord += (((uText & 0XFF) - 0X37) << 12);
+    else if ((uText & 0XFF) >= 0X61 && (uText & 0XFF) <= 0X66)
+        uWord += (((uText & 0XFF) - 0X57) << 12);
+    return uWord;
+}
+
 int CKingJson::formatText(PKSONNODE pNode) {
     char* pTextTmp = NULL;
     char* pTextPos = m_pTextPos;
@@ -812,7 +912,7 @@ int CKingJson::formatText(PKSONNODE pNode) {
         pTextTmp = pNode->pName;
         KSON_FILL_FORMAT_TEXT
     }
-    *pTextPos++ = (pNode->nFlag & KSON_TYPE_LIST) ? '[' : '{';
+    *pTextPos++ = (pNode->nFlag & KSON_NODE_LIST) ? '[' : '{';
 
     PKSONITEM pItem = pNode->pHead;
     while (pItem != NULL) {
@@ -834,7 +934,7 @@ int CKingJson::formatText(PKSONNODE pNode) {
         formatText(pChild);
         pChild = pChild->pNext;
     }
-    *m_pTextPos++ = (pNode->nFlag & KSON_TYPE_LIST) ? ']' : '}';
+    *m_pTextPos++ = (pNode->nFlag & KSON_NODE_LIST) ? ']' : '}';
     if (pNode != m_pTxtNode && pNode->pNext != NULL)
         *m_pTextPos++ = ',';
     return 0;
