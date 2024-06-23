@@ -1,6 +1,8 @@
 # Introduction
 There are two json parser class. 
-The bang json is very very simple,  it only has 163 lines code.
+
+The bang json is very very simple,  it only has 154 lines code.
+
 The king json is very fast and powerful tool to parse, modify, export json data. The performance is better than yysjon and simdjson.
 
 # Performance
