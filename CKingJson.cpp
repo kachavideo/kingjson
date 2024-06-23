@@ -9,51 +9,35 @@
     2024-05-05		kacha video			Create file
 
 *******************************************************************************/
-#include <stdint.h>
 #include <stdio.h>
+#include <emmintrin.h>
+#include <nmmintrin.h>
 #include "CKingJson.h"
 
 CKingJson::CKingJson(void) {
 }
 
 CKingJson::~CKingJson(void) {
-    relaseNode(&m_ksonRoot);
-    relaseSets();
-    if (m_pTextMem != NULL)
-        delete[]m_pTextMem;
-    if (m_pTextFmt != NULL)
-        delete[]m_pTextFmt;
+    releaseAll();
 }
 
 PKSONNODE CKingJson::ParseData(const char* pData, int nSize, int nFlag) {
     if (pData == NULL || nSize <= 1)
         return NULL;
-    relaseNode(&m_ksonRoot);
-    relaseSets();
-    if (pData != m_pTextMem) {
-        if (m_pTextMem != NULL && (m_nTextNum < nSize || m_nTextNum > nSize * 2)) {
-            delete[]m_pTextMem;
-            m_pTextMem = NULL;
-        }
-        if(m_pTextMem == NULL) {
-            m_nTextNum = nSize + 1;
-            m_pTextMem = new char[m_nTextNum];
-        }
-        memcpy(m_pTextMem, pData, nSize);
-        m_pTextMem[nSize] = 0;
-    }
+    releaseAll();
+    m_nTextNum = nSize + 1;
+    m_pTextMem = new char[m_nTextNum];
+    memcpy(m_pTextMem, pData, nSize);
+    m_pTextMem[nSize] = 0;
     char* pBuff = m_pTextMem;
-    if (m_pTextMem[0] == (char)0XEF && m_pTextMem[1] == (char)0XBB && m_pTextMem[2] == (char)0XBF) {
+    if (((*(int*)m_pTextMem) & 0X00BFBBEF) == 0X00BFBBEF) {
         pBuff += 3; nSize -= 3;
     }
-    m_nSetSize = ((nSize / 1048576) + 1) * 1024;
-    m_nNodeDep = 1;
-    if (pBuff[0] == '[')
-        m_ksonRoot.nFlag = KSON_NODE_LIST;
-    int nRC = parseJson(&m_ksonRoot, pBuff, false);
-    if (nRC <= 0 || m_nNodeDep != 0 || (nFlag == 1 && (nSize - nRC) > 4))
-        return NULL;
+    m_nSetSize = ((nSize / 1048576) + 1) * 2048;
     m_nTextAlloc = nSize;
+    int nErr = parseJson(pBuff, nSize);
+    if (nErr <= 0)
+        return NULL;
     return &m_ksonRoot;
 }
 
@@ -70,7 +54,7 @@ PKSONNODE CKingJson::OpenFileW(const wchar_t* pFile, int nFlag) {
     return openFile(hFile, nFlag);
 #else
     return NULL;
-#endif // WIN32
+#endif // _WIN32
 }
 
 PKSONNODE CKingJson::FindNode(PKSONNODE pNode, const char* pName, bool bChild) {
@@ -111,9 +95,9 @@ PKSONNODE CKingJson::GetList(PKSONNODE pNode, int nIndex) {
 const char* CKingJson::GetValue(PKSONITEM pItem) {
     if (pItem == NULL || pItem->pData == NULL)
         return NULL;
-    if (!(pItem->nFlag & BSON_TEXT_UTF8)) {
+    if (!(pItem->nFlag & KSON_TEXT_UTF8)) {
         convertTxt(pItem->pData);
-        pItem->nFlag |= BSON_TEXT_UTF8;
+        pItem->nFlag |= KSON_TEXT_UTF8;
     }
     return pItem->pData;
 }
@@ -124,10 +108,10 @@ const char* CKingJson::GetValue(PKSONNODE pNode, const char* pName, bool bChild)
 
 const char* CKingJson::GetValue(PKSONNODE pNode, const char* pName, bool bChild, const char* pDefault) {
     if (pNode == NULL) pNode = &m_ksonRoot;
-    PKSONITEM pItem = findItem(pNode, pName, bChild, false);
-    if (pItem != NULL && pItem->pData != NULL && !(pItem->nFlag & BSON_TEXT_UTF8)) {
+    PKSONITEM pItem = findItem(pNode, pName, true, bChild);
+    if (pItem != NULL && pItem->pData != NULL && !(pItem->nFlag & KSON_TEXT_UTF8)) {
         convertTxt(pItem->pData);
-        pItem->nFlag |= BSON_TEXT_UTF8;
+        pItem->nFlag |= KSON_TEXT_UTF8;
     }
     return pItem != NULL ? (pItem->pData == NULL ? pDefault : pItem->pData) : pDefault;
 }
@@ -198,58 +182,57 @@ long long CKingJson::GetItemLng(PKSONNODE pNode, int nIndex, long long lDefault)
 }
 
 PKSONNODE CKingJson::AddNode(PKSONNODE pNode, const char* pName, const char* pJson, int nSize) {
-    PKSONNODE pNewNode = addNewNode(pNode, (char*)pName, false);
-    if (pNewNode == NULL)
+    if (pJson == NULL || nSize <= 1)
         return NULL;
     char* pTextMem = new char[nSize + 1];
     memcpy(pTextMem, pJson, nSize);
     pTextMem[nSize] = 0;
-    parseJson(pNewNode, pTextMem, true);
+    PKSONNODE pNewNode = parseNewJson(pNode, pTextMem, nSize);
     delete[]pTextMem;
     return pNewNode;
 }
 
 PKSONNODE CKingJson::AddNode(PKSONNODE pNode, const char* pName, bool bList) {
-    return addNewNode(pNode, (char *)pName, bList);
+    return addNewNode(pNode, (char*)pName, strlen(pName), bList ? KSON_NODE_LIST : 0);
 }
 
 PKSONITEM CKingJson::AddItem(PKSONNODE pNode, const char* pName, const char* pValue) {
-    return addNewItem(pNode, pName, pValue, 0, true, KSON_NUM_MAX);
+    return addNewItem(pNode, pName, strlen(pName), pValue, strlen(pValue), KSON_DATA_TEXT, KSON_NUM_MAX);
 }
 
 PKSONITEM CKingJson::AddItem(PKSONNODE pNode, const char* pName, int nValue) {
     char szValue[32]; snprintf(szValue, sizeof(szValue), "%d", nValue);
-    return addNewItem(pNode, pName, szValue, 0, false, KSON_NUM_MAX);
+    return addNewItem(pNode, pName, strlen(pName), szValue, strlen(szValue), 0, KSON_NUM_MAX);
 }
 
 PKSONITEM CKingJson::AddItem(PKSONNODE pNode, const char* pName, double dValue) {
     char szValue[32]; snprintf(szValue, sizeof(szValue), "%f", dValue);
-    return addNewItem(pNode, pName, szValue, 0, false, KSON_NUM_MAX);
+    return addNewItem(pNode, pName, strlen(pName), szValue, strlen(szValue), 0, KSON_NUM_MAX);
 }
 
 PKSONITEM CKingJson::AddItem(PKSONNODE pNode, const char* pName, long long lValue) {
     char szValue[32]; snprintf(szValue, sizeof(szValue), "%lld", lValue);
-    return addNewItem(pNode, pName, szValue, 0, false, KSON_NUM_MAX);
+    return addNewItem(pNode, pName, strlen(pName), szValue, strlen(szValue), 0, KSON_NUM_MAX);
 }
 
 PKSONITEM CKingJson::AddItem(PKSONNODE pNode, int nIndex, const char* pValue, bool bText) {
     if (pValue == NULL) return NULL;
-    return addNewItem(pNode, NULL, pValue, 0, bText, nIndex);
+    return addNewItem(pNode, NULL, 0, pValue, strlen(pValue), bText ? KSON_DATA_TEXT : 0, nIndex);
 }
 
 PKSONITEM CKingJson::AddItem(PKSONNODE pNode, int nIndex, int nValue) {
     char szValue[32]; snprintf(szValue, sizeof(szValue), "%d", nValue);
-    return addNewItem(pNode, NULL, szValue, 0, false, nIndex);
+    return addNewItem(pNode, NULL, 0, szValue, strlen(szValue), 0, nIndex);
 }
 
 PKSONITEM CKingJson::AddItem(PKSONNODE pNode, int nIndex, double dValue) {
     char szValue[32]; snprintf(szValue, sizeof(szValue), "%f", dValue);
-    return addNewItem(pNode, NULL, szValue, 0, false, nIndex);
+    return addNewItem(pNode, NULL, 0, szValue, strlen(szValue), 0, nIndex);
 }
 
 PKSONITEM CKingJson::AddItem(PKSONNODE pNode, int nIndex, long long lValue) {
     char szValue[32]; snprintf(szValue, sizeof(szValue), "%lld", lValue);
-    return addNewItem(pNode, NULL, szValue, 0, false, nIndex);
+    return addNewItem(pNode, NULL, 0, szValue, strlen(szValue), 0, nIndex);
 }
 
 int CKingJson::DelNode(PKSONNODE pNode, const char* pName) {
@@ -268,18 +251,10 @@ int CKingJson::DelItem(PKSONNODE pNode, int nIndex) {
 }
 
 int CKingJson::DelNode(PKSONNODE pNode) {
-    if (pNode == NULL || pNode == &m_ksonRoot) {
-        relaseNode(&m_ksonRoot);
-        relaseSets();
-        if (m_pTextMem != NULL)
-            delete[]m_pTextMem;
-        m_pTextMem = NULL;
-        if (m_pTextFmt != NULL)
-            delete[]m_pTextFmt;
-        m_pTextFmt = NULL;
-        return 1;
-    }
-    return deleteNode(pNode);
+    if (pNode == NULL)
+        return releaseAll();
+    else
+        return deleteNode(pNode);
 }
 
 PKSONITEM CKingJson::ModItem(PKSONNODE pNode, const char* pName, const char* pValue) {
@@ -344,7 +319,7 @@ int CKingJson::SortItem(PKSONNODE pNode, bool bName, bool bASC) {
         ppItem[nIndex++] = pHead;
         pHead = pHead->pNext;
     }
-    if (bName) 
+    if (bName)
         qsort(ppItem, nItemNum, sizeof(PKSONITEM), ksonCompItemName);
     else
         qsort(ppItem, nItemNum, sizeof(PKSONITEM), ksonCompItemData);
@@ -358,7 +333,7 @@ int CKingJson::SortItem(PKSONNODE pNode, bool bName, bool bASC) {
     }
     pNode->pHead = pNode->pItem = ppItem[0];
     ppItem[nItemNum - 1]->pNext = NULL;
-    for (int i = 0; i < nItemNum - 1; i++) 
+    for (int i = 0; i < nItemNum - 1; i++)
         ppItem[i]->pNext = ppItem[i + 1];
     delete[]ppItem;
     return 1;
@@ -369,7 +344,7 @@ int CKingJson::SortNode(PKSONNODE pNode, bool bASC) {
     int nNodeNum = 0;
     PKSONNODE pHead = GetHeadNode(pNode);
     while (pHead != NULL) {
-        nNodeNum++; 
+        nNodeNum++;
         pHead = pHead->pNext;
     }
     if (nNodeNum <= 1)
@@ -411,7 +386,7 @@ PKSONITEM CKingJson::GetHeadItem(PKSONNODE pNode) {
 PKSONNODE CKingJson::GetHeadNode(PKSONNODE pNode) {
     if (pNode == NULL) pNode = &m_ksonRoot;
     PKSONNODE pChild = pNode->pNode;
-    while (pChild != NULL && pChild->pPrev != NULL) 
+    while (pChild != NULL && pChild->pPrev != NULL)
         pChild = pChild->pPrev;
     pNode->pNode = pChild;
     return pChild;
@@ -443,7 +418,7 @@ const char* CKingJson::FormatText(PKSONNODE pNode, int* pSize) {
     m_pTextFmt = new char[nTextSize];
     memset(m_pTextFmt, 0, nTextSize);
     m_pTextPos = m_pTextFmt;
-    if (pNode != &m_ksonRoot) 
+    if (pNode != &m_ksonRoot)
         *m_pTextPos++ = (pNode->nFlag & KSON_NODE_LIST) ? '[' : '{';
     formatText(pNode);
     if (pNode != &m_ksonRoot)
@@ -458,7 +433,7 @@ int CKingJson::SaveToFile(PKSONNODE pNode, const char* pFile) {
     if (hFile == NULL)
         return -1;
     int nJsonSize = 0;
-    const char * pFmtText = FormatText(pNode, &nJsonSize);
+    const char* pFmtText = FormatText(pNode, &nJsonSize);
     if (pFmtText == NULL)
         return -1;
     int nUtf8 = 0X00BFBBEF;
@@ -469,7 +444,7 @@ int CKingJson::SaveToFile(PKSONNODE pNode, const char* pFile) {
     return 1;
 }
 
-PKSONNODE CKingJson::openFile(FILE * hFile, int nFlag) {
+PKSONNODE CKingJson::openFile(FILE* hFile, int nFlag) {
     fseek(hFile, 0, SEEK_END);
     int nSize = ftell(hFile);
     fseek(hFile, 0, SEEK_SET);
@@ -479,10 +454,10 @@ PKSONNODE CKingJson::openFile(FILE * hFile, int nFlag) {
     m_pTextMem = new char[m_nTextNum];
     size_t nRead = fread(m_pTextMem, 1, nSize, hFile);
     fclose(hFile);
-    if (nRead != nSize) 
+    if (nRead != nSize)
         return NULL;
     m_pTextMem[nSize] = 0;
-    return ParseData((const char *)m_pTextMem, nSize, nFlag);
+    return ParseData((const char*)m_pTextMem, nSize, nFlag);
 }
 
 PKSONNODE CKingJson::findNode(PKSONNODE pNode, const char* pName, bool bChild) {
@@ -547,22 +522,71 @@ int CKingJson::deleteNode(PKSONNODE pNode) {
         else
             pNode->pPrnt->pNode = NULL;
     }
-    relaseNode(pNode);
+    releaseNode(pNode);
     return 1;
+}
+
+PKSONNODE CKingJson::parseNewJson(PKSONNODE pNode, char* pData, int nSize) {
+    int   nDeep = 0;
+    int   nName = 0;
+    char* pName = NULL;
+    char* pLast = pData + nSize;
+    char* pText = pData;
+    char* pNext = pData;
+    while (pText < pLast) {
+        if (*pText <= 0X20)
+            pText = skipFormat(pText, pLast);
+        if (*pText == '{' || *pText == '[') {
+            if (pName == NULL)
+                pNode = addNewNode(pNode, "ksonNode", 8, *pText++ == '[' ? KSON_NODE_LIST : 0);
+            else
+                pNode = addNewNode(pNode, pName, nName, *pText++ == '[' ? KSON_NODE_LIST : 0);
+            if (pNode == NULL) return NULL;
+        }
+        else if (*pText == '}' || *pText == ']') {
+            *pText++ = 0; if (*pText == ',') pText++;
+            pNode = pNode->pPrnt;
+        }
+        else if (*pText == '"') {
+            pNext = searchName(++pText, pLast);
+            nName = (int)(pNext - pText); *pNext++ = 0;
+            if (pNode->nFlag & KSON_NODE_LIST) {
+                addNewItem(pNode, NULL, 0, pText, nName, KSON_DATA_TEXT, KSON_NUM_MAX);
+                pText = (*pNext == ',') ? pNext + 1 : pNext;
+            }
+            else {
+                pName = pText; pText = pNext + 1;
+                while (*pText <= 0X20) pText++;
+                if (*pText == '"') {
+                    pNext = searchText(++pText, pLast);
+                    addNewItem(pNode, pName, nName, pText, (int)(pNext - pText), KSON_DATA_TEXT, KSON_NUM_MAX);
+                    *pNext++ = 0; pText = (*pNext == ',') ? pNext + 1 : pNext;
+                }
+            }
+        }
+        else {
+            pNext = searchData(pText, pLast);
+            addNewItem(pNode, pName, nName, pText, (int)(pNext - pText), 0, KSON_NUM_MAX);
+            if (*pNext == ',' || *pNext <= ' ')
+                *pNext++ = 0;
+            pText = pNext;
+        }
+    }
+    return GetTailNode(pNode);
 }
 
 int CKingJson::deleteItem(PKSONNODE pNode, PKSONITEM pItem) {
     if (pNode == NULL) pNode = &m_ksonRoot;
-    if (pItem == NULL) return - 1;
+    if (pItem == NULL) return -1;
     PKSONITEM pHead = GetHeadItem(pNode);
     if (pHead == NULL || pHead->pNext == NULL) {
         if (pHead != pItem)
             return -1;
         if (pItem->pName != NULL && (pItem->pName < m_pTextMem || pItem->pName > m_pTextMem + m_nTextNum)) {
-            m_nTextAlloc -= ksonStrLen(pItem->pName); delete[]pItem->pName;
+            m_nTextAlloc -= ((pItem->nFlag & 0X0FFF0000) >> 16); delete[]pItem->pName;
         }
         if (pItem->pData != NULL && (pItem->pData < m_pTextMem || pItem->pData > m_pTextMem + m_nTextNum)) {
-            m_nTextAlloc -= ksonStrLen(pItem->pData); delete[]pItem->pData;
+            m_nTextAlloc -= (pItem->nFlag & 0XFFFF); delete[]pItem->pData;
         }
         pNode->pHead = pNode->pItem = NULL;
         return 1;
@@ -577,10 +601,10 @@ int CKingJson::deleteItem(PKSONNODE pNode, PKSONITEM pItem) {
             if (pNode->pItem == pItem)
                 pNode->pItem = pItem->pNext != NULL ? pItem->pNext : pPrev;
             if (pItem->pName != NULL && (pItem->pName < m_pTextMem || pItem->pName > m_pTextMem + m_nTextNum)) {
-                m_nTextAlloc -= ksonStrLen(pItem->pName); delete[]pItem->pName;
+                m_nTextAlloc -= ((pItem->nFlag & 0X0FFF0000) >> 16); delete[]pItem->pName;
             }
             if (pItem->pData != NULL && (pItem->pData < m_pTextMem || pItem->pData > m_pTextMem + m_nTextNum)) {
-                m_nTextAlloc -= ksonStrLen(pItem->pData); delete[]pItem->pData;
+                m_nTextAlloc -= (pItem->nFlag & 0XFFFF); delete[]pItem->pData;
             }
             return 1;
         }
@@ -589,47 +613,44 @@ int CKingJson::deleteItem(PKSONNODE pNode, PKSONITEM pItem) {
     return -1;
 }
 
-PKSONNODE CKingJson::addNewNode(PKSONNODE pNode, const char* pName, bool bList) {
+PKSONNODE CKingJson::addNewNode(PKSONNODE pNode, const char* pName, int nNameLen, int nType) {
     if (pNode == NULL) pNode = &m_ksonRoot;
     if ((m_nNodeCount % m_nSetSize) == 0)
         if (addNodeSet() < 0) return NULL;
     if (pName != NULL) {
-        int nSize = (int)strlen(pName);
-        m_pSetNode->pName = new char[nSize + 1];
-        m_pSetNode->pName[nSize] = 0;
-        memcpy(m_pSetNode->pName, pName, nSize);
-        m_nTextAlloc += (nSize + 4);
+        m_pSetNode->pName = new char[nNameLen + 1];
+        m_pSetNode->pName[nNameLen] = 0;
+        memcpy(m_pSetNode->pName, pName, nNameLen);
+        m_nTextAlloc += (nNameLen + 4);
     }
     m_pSetNode->pPrnt = pNode;
-    m_pSetNode->nFlag = bList;
+    m_pSetNode->nFlag = nType | (nNameLen << 16);
     PKSONNODE pTaiNode = GetTailNode(pNode);
     m_pSetNode->pPrev = pTaiNode;
     if (pTaiNode == NULL)
         pNode->pNode = m_pSetNode;
-    else 
+    else
         pTaiNode->pNext = m_pSetNode;
     m_nNodeCount++;
     return m_pSetNode++;
 }
 
-PKSONITEM CKingJson::addNewItem(PKSONNODE pNode, const char* pName, const char* pData, int nLen, bool bText, int nIndex) {
+PKSONITEM CKingJson::addNewItem(PKSONNODE pNode, const char* pName, int nNameLen, const char* pData, int nDataLen, int nType, int nIndex) {
     if (pNode == NULL) pNode = &m_ksonRoot;
     if ((m_nItemCount % m_nSetSize) == 0)
         if (addItemSet() < 0) return NULL;
-    m_pSetItem->nFlag = bText;
-    if (pName != NULL) {
-        int nSize = (int)strlen(pName);
-        m_pSetItem->pName = new char[nSize + 1];
-        m_pSetItem->pName[nSize] = 0;
-        memcpy(m_pSetItem->pName, pName, nSize);
-        m_nTextAlloc += (nSize + 4);
+    m_pSetItem->nFlag = nType + (nNameLen << 16) + nDataLen;
+    if (pName != NULL && ((pNode->nFlag & KSON_NODE_LIST) == 0)) {
+        m_pSetItem->pName = new char[nNameLen + 1];
+        m_pSetItem->pName[nNameLen] = 0;
+        memcpy(m_pSetItem->pName, pName, nNameLen);
+        m_nTextAlloc += (nNameLen + 4);
     }
     if (pData != NULL) {
-        int nSize = nLen > 0 ? nLen : (int)strlen(pData);
-        m_pSetItem->pData = new char[nSize + 1];
-        m_pSetItem->pData[nSize] = 0;
-        memcpy(m_pSetItem->pData, pData, nSize);
-        m_nTextAlloc += (nSize + 4);
+        m_pSetItem->pData = new char[nDataLen + 1];
+        m_pSetItem->pData[nDataLen] = 0;
+        memcpy(m_pSetItem->pData, pData, nDataLen);
+        m_nTextAlloc += (nDataLen + 4);
     }
     PKSONITEM pPosItem = GetHeadItem(pNode);
     if (pPosItem == NULL) {
@@ -643,7 +664,7 @@ PKSONITEM CKingJson::addNewItem(PKSONNODE pNode, const char* pName, const char* 
         pPosItem = GetTailItem(pNode);
         pPosItem->pNext = m_pSetItem;
     }
-    else {    
+    else {
         while (pPosItem != NULL) {
             if (--nIndex == 0) {
                 m_pSetItem->pNext = pPosItem->pNext;
@@ -667,156 +688,200 @@ int CKingJson::modifyItem(PKSONITEM pItem, const char* pText, bool bName) {
         return -1;
     if (bName) {
         if (pItem->pName != NULL && (pItem->pName < m_pTextMem || pItem->pName > m_pTextMem + m_nTextNum)) {
-            m_nTextAlloc -= ksonStrLen(pItem->pName); delete[]pItem->pName;
+            m_nTextAlloc -= ((pItem->nFlag & 0X0FFF0000) >> 16); delete[]pItem->pName;
         }
         int nSize = (int)strlen(pText);
         pItem->pName = new char[nSize + 1];
         pItem->pName[nSize] = 0;
         memcpy(pItem->pName, pText, nSize);
+        pItem->nFlag = (pItem->nFlag & 0XF000FFFF) + (nSize << 16);
         m_nTextAlloc += (nSize + 4);
     }
     else {
         if (pItem->pData != NULL && (pItem->pData < m_pTextMem || pItem->pData > m_pTextMem + m_nTextNum)) {
-            m_nTextAlloc -= ksonStrLen(pItem->pData); delete[]pItem->pData;
+            m_nTextAlloc -= (pItem->nFlag & 0XFFFF); delete[]pItem->pData;
         }
         int nSize = (int)strlen(pText);
         pItem->pData = new char[nSize + 1];
         pItem->pData[nSize] = 0;
         memcpy(pItem->pData, pText, nSize);
+        pItem->nFlag = (pItem->nFlag & 0XFFFF0000) + nSize;
         m_nTextAlloc += (nSize + 4);
     }
     return 1;
 }
 
-int CKingJson::parseJson(PKSONNODE pNode, char* pData, bool bNewNode) {
-    char*   pText = pData;
-    char*   pNext = pData;
-    char*   pName = NULL;
-    bool    bList = false;
-    int     nErr  = 0;
-    if (m_nNodeDep > BSON_MAX_DEEPS)
-        return -1;
-    KSON_SKIP_FORMAT_CHAR;
-    if (*pText != '{' && *pText != '[')
-        return -1;
-    bList = *pText++ == '[' ? true : false;
-    while (*pText != 0) {
-        KSON_SKIP_FORMAT_CHAR;
-        if (*pText == '\"') {
-            KSON_FIND_NEXTOF_TEXT1;
-            if (bList) {
-                if(bNewNode)
-                    addNewItem(pNode, NULL, pText, 0, true, KSON_NUM_MAX);
-                else
-                    appendItem(pNode, NULL, pText, true);
+int CKingJson::parseJson(char* pData, int nSize) {
+    int         nDeep = 0;
+    int         nName = 0;
+    PKSONNODE   pNode = &m_ksonRoot;
+    char* pName = NULL;
+    char* pLast = pData + nSize;
+    char* pText = pData;
+    char* pNext = pData;
+    pText = skipFormat(pText, pLast);
+    if (*pText != '{' && *pText != '[') return -1;
+    m_ksonRoot.nFlag = *pText++ == '[' ? KSON_NODE_LIST : 0;
+    while (pText < pLast) {
+        if (*pText <= 0X20) 
+            pText = skipFormat(pText, pLast);
+        if (*pText == '{' || *pText == '[') {
+            if (nDeep++ > KSON_MAX_DEEPS) return -1;
+            pNode = appendNode(pNode, pName, nName, *pText++ == '[' ? KSON_NODE_LIST : 0);
+            if (pNode == NULL) return -1;
+        }
+        else if (*pText == '}' || *pText == ']') {
+            if (pNode->pPrnt == NULL) break;
+            *pText++ = 0; if (*pText == ',') pText++;
+             pNode = pNode->pPrnt; nDeep--;
+        }
+        else if (*pText == '"') {
+            pNext = searchName(++pText, pLast);
+            nName = (int)(pNext - pText); *pNext++ = 0;
+            if (pNode->nFlag & KSON_NODE_LIST) {
+                appendItem(pNode, NULL, 0, pText, nName, KSON_DATA_TEXT);
                 pText = (*pNext == ',') ? pNext + 1 : pNext;
             }
             else {
-                if (*pNext++ != ':') return -1;
-                pName = pText; pText = pNext;
-                KSON_SKIP_FORMAT_CHAR;
-                if (*pText == '\"') {
-                    KSON_FIND_NEXTOF_TEXT1;
-                    if (bNewNode)
-                        addNewItem(pNode, pName, pText, 0, true, KSON_NUM_MAX);
-                    else
-                        appendItem(pNode, pName, pText, true);
-                    pText = (*pNext == ',') ? pNext + 1 : pNext;
-                }
-                else if (*pText == '{' || *pText == '[') {
-                    KSON_SKIP_FORMAT_CHAR;
-                    PKSONNODE pNewNode = NULL;
-                    if (bNewNode)
-                        pNewNode = addNewNode(pNode, pName, *pText == '[');
-                    else
-                        pNewNode = appendNode(pNode, pName, *pText == '[');
-                    if (pNewNode == NULL)
-                        return -1;
-                    nErr = parseJson(pNewNode, pText, bNewNode);
-                    if (nErr < 0)
-                        return nErr;
-                    pText += nErr;
-                }
-                else if (*pText == '}' || *pText == ']') {
-                    m_nNodeDep--; *pText = 0;
-                    return (int)((pText - pData) + (*(pText + 1) == ',' ? 2 : 1));
-                }
-                else {
-                    KSON_SKIP_FORMAT_CHAR;
-                    KSON_FIND_NEXTOF_DATA;
-                    if (bNewNode)
-                        addNewItem(pNode, pName, pText, (int)(pNext - pText), false, KSON_NUM_MAX);
-                    else
-                        appendItem(pNode, pName, pText, false);
-                    pText = pNext;
-                    if (*pNext == ',') {
-                        *pNext = 0; pText = pNext + 1;
-                    }
+                pName = pText; pText = pNext + 1;
+                while (*pText <= 0X20) pText++;
+                if (*pText == '"') {
+                    pNext = searchText(++pText, pLast);
+                    appendItem(pNode, pName, nName, pText, (int)(pNext - pText), KSON_DATA_TEXT);
+                    *pNext++ = 0; pText = (*pNext == ',') ? pNext + 1 : pNext;
                 }
             }
-        }
-        else if (*pText == '{' || *pText == '[') {
-            KSON_SKIP_FORMAT_CHAR;
-            PKSONNODE pNewNode = NULL;
-            if (bNewNode)
-                pNewNode = addNewNode(pNode, pName, *pText == '[');
-            else
-                pNewNode = appendNode(pNode, pName, *pText == '[');
-            if (pNewNode == NULL)
-                return -1;
-            nErr = parseJson(pNewNode, pText, bNewNode);
-            if (nErr <= 0)
-                return -1;
-            pText += nErr;
-        }
-        else if (*pText == '}' || *pText == ']') {
-            m_nNodeDep--; *pText = 0;
-            return (int)((pText - pData) + (*(pText + 1) == ',' ? 2 : 1));
         }
         else {
-            KSON_SKIP_FORMAT_CHAR;
-            KSON_FIND_NEXTOF_DATA;
-            if (bNewNode)
-                addNewItem(pNode, pName, pText, (int)(pNext - pText), false, KSON_NUM_MAX);
-            else
-                appendItem(pNode, pName, pText, false);
+            pNext = searchData(pText, pLast);
+            appendItem(pNode, pName, nName, pText, (int)(pNext - pText), 0);
+            if (*pNext == ',' || *pNext <= ' ')
+                *pNext++ = 0;
             pText = pNext;
-            if (*pNext == ',') {
-                *pNext = 0; pText = pNext + 1;
-            }
         }
     }
     return (int)(pText - pData);
 }
 
-PKSONITEM CKingJson::appendItem(PKSONNODE pNode, char* pName, char* pData, bool bText) {
-    if ((m_nItemCount % m_nSetSize) == 0) 
+PKSONITEM CKingJson::appendItem(PKSONNODE pNode, char* pName, int nNameLen, char* pData, int nDataLen, int nType) {
+    if ((m_nItemCount % m_nSetSize) == 0)
         if (addItemSet() < 0) return NULL;
-    m_pSetItem->pName = pName;
+    m_pSetItem->pName = (pNode->nFlag & KSON_NODE_LIST) ? NULL : pName;
+    m_pSetItem->nFlag = (pNode->nFlag & KSON_NODE_LIST) ? (nType | nDataLen) : (nType | (nNameLen << 16) | nDataLen);
     m_pSetItem->pData = pData;
-    m_pSetItem->nFlag = bText;
     if (pNode->pHead == NULL)
         pNode->pHead = m_pSetItem;
-    if (pNode->pItem != NULL) 
+    if (pNode->pItem != NULL)
         pNode->pItem->pNext = m_pSetItem;
     pNode->pItem = m_pSetItem;
     m_nItemCount++;
     return m_pSetItem++;
 }
 
-PKSONNODE CKingJson::appendNode(PKSONNODE pNode, char* pName, bool bList) {
-    m_nNodeDep++;
-    if ((m_nNodeCount % m_nSetSize) == 0) 
+PKSONNODE CKingJson::appendNode(PKSONNODE pNode, char* pName, int nNameLen, int nType) {
+    if ((m_nNodeCount % m_nSetSize) == 0)
         if (addNodeSet() < 0) return NULL;
-    m_pSetNode->pName = pName;
     m_pSetNode->pPrnt = pNode;
-    m_pSetNode->nFlag = bList;
+    m_pSetNode->pName = (pNode->nFlag & KSON_NODE_LIST) ? NULL : pName;
+    m_pSetNode->nFlag = (pNode->nFlag & KSON_NODE_LIST) ? nType : (nType | (nNameLen << 16));
     if (pNode->pNode != NULL)
         pNode->pNode->pNext = m_pSetNode;
     m_pSetNode->pPrev = pNode->pNode;
     pNode->pNode = m_pSetNode;
     m_nNodeCount++;
     return m_pSetNode++;
+}
+
+char* CKingJson::skipFormat(char* pText, char* pLast) {
+    uint32_t uMask;
+    __m128i  vData;
+    __m128i  vFind = _mm_set1_epi8(0X20);
+    while (pText < pLast) {
+        vData = _mm_loadu_si128((__m128i*)pText);
+        uMask = _mm_movemask_epi8(_mm_cmpgt_epi8(vData, vFind));
+        if (uMask)
+            return (char *)(pText + forwardPos(uMask));
+        pText = pText + KSON_VECTOR_SIZE;
+    }
+    return pLast;
+}
+
+char* CKingJson::searchName(char* pText, char* pLast) {
+    __m128i  vTxt1;
+    __m128i  vFind = _mm_set1_epi8((uint8_t)'\"');
+    uint32_t uMask;
+    while (pText < pLast) {
+        vTxt1 = _mm_loadu_si128((__m128i*)pText);
+        uMask = _mm_movemask_epi8(_mm_cmpeq_epi8(vFind, vTxt1));
+        if (uMask) {
+            pText = pText + forwardPos(uMask);
+            if (*(pText - 1) == '\\') {
+                pText++; continue;
+            }
+            return pText;
+        }
+        pText = pText + KSON_VECTOR_SIZE;
+    }
+    return pLast;
+}
+
+char* CKingJson::searchText(char* pText, char* pLast) {
+    uint32_t uMask;
+    __m128i  vTxt1, vTxt2, vEqa1, vEqa2, vTtor;
+    __m128i  vFind = _mm_set1_epi8((uint8_t)'\"');
+    while (pText < pLast) {
+        vTxt1 = _mm_loadu_si128((__m128i*)pText);
+        vTxt2 = _mm_loadu_si128((__m128i*)(pText + KSON_VECTOR_SIZE));
+        vEqa1 = _mm_cmpeq_epi8(vFind, vTxt1);
+        vEqa2 = _mm_cmpeq_epi8(vFind, vTxt2);
+        vTtor = _mm_or_si128(vEqa1, vEqa2);
+        if (_mm_movemask_epi8(vTtor)) {
+            uMask = _mm_movemask_epi8(vEqa1);
+            if (!uMask) {
+                pText += KSON_VECTOR_SIZE;
+                uMask = _mm_movemask_epi8(vEqa2);
+            }
+            pText = pText + forwardPos(uMask);
+            if (*(pText - 1) == '\\') {
+                pText++; continue;
+            }
+            return pText;
+        }
+        pText = pText + KSON_VECTOR_SIZE;
+    }
+    return pLast;
+}
+
+char* CKingJson::searchData(char* pText, char* pLast) {
+    uint32_t vMask;
+    __m128i  vData; 
+    __m128i  vEqa1, vEqa2, vEqa3, vEqa4;
+    __m128i  vEnd1 = _mm_set1_epi8((uint8_t)']');
+    __m128i  vEnd2 = _mm_set1_epi8((uint8_t)'}');
+    __m128i  vEnd3 = _mm_set1_epi8((uint8_t)',');
+    __m128i  vEnd4 = _mm_set1_epi8((uint8_t)' ');
+    while (pText < pLast) {
+        vData = _mm_loadu_si128((__m128i*)pText);
+        vEqa1 = _mm_cmpeq_epi8(vEnd1, vData);
+        vEqa2 = _mm_cmpeq_epi8(vEnd2, vData);
+        vEqa3 = _mm_cmpeq_epi8(vEnd3, vData);
+        vEqa4 = _mm_cmplt_epi8(vData, vEnd4);
+        vMask = _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(vEqa1, vEqa2), _mm_or_si128(vEqa3, vEqa4)));
+        if (vMask)
+            return pText + forwardPos(vMask);
+        pText = pText + KSON_VECTOR_SIZE;
+    }
+    return pLast;
+}
+
+uint32_t CKingJson::forwardPos(uint32_t mask) {
+#ifdef _WIN32
+    unsigned long uPos = 0;
+    _BitScanForward(&uPos, mask);
+    return uPos;
+#else
+    return __builtin_ctz(mask);
+#endif
 }
 
 int CKingJson::convertTxt(char* pData) {
@@ -909,20 +974,28 @@ int CKingJson::formatText(PKSONNODE pNode) {
     char* pTextTmp = NULL;
     char* pTextPos = m_pTextPos;
     if (pNode->pName != NULL) {
-        pTextTmp = pNode->pName;
-        KSON_FILL_FORMAT_TEXT
+        *pTextPos++ = '\"';
+        memcpy(pTextPos, pNode->pName, (pNode->nFlag & 0X0FFF0000) >> 16);
+        pTextPos += (pNode->nFlag & 0X0FFF0000) >> 16;
+        *pTextPos++ = '\"'; *pTextPos++ = ':';
     }
     *pTextPos++ = (pNode->nFlag & KSON_NODE_LIST) ? '[' : '{';
 
     PKSONITEM pItem = pNode->pHead;
     while (pItem != NULL) {
         if (pItem->pName != NULL) {
-            pTextTmp = pItem->pName;
-            KSON_FILL_FORMAT_TEXT
+            *pTextPos++ = '\"';
+            memcpy(pTextPos, pItem->pName, (pItem->nFlag & 0X0FFF0000) >> 16);
+            pTextPos += (pItem->nFlag & 0X0FFF0000) >> 16;
+            *pTextPos++ = '\"'; *pTextPos++ = ':';
         }
         if (pItem->pData != NULL) {
-            pTextTmp = pItem->pData;
-            KSON_FILL_FORMAT_DATA;
+            if (pItem->nFlag & KSON_DATA_TEXT)
+                *pTextPos++ = '\"';
+            memcpy(pTextPos, pItem->pData, pItem->nFlag & 0XFFFF);
+            pTextPos += (pItem->nFlag & 0XFFFF);
+            if (pItem->nFlag & KSON_DATA_TEXT)
+                *pTextPos++ = '\"';
         }
         if (pItem->pNext != NULL || pNode->pNode != NULL)
             *pTextPos++ = ',';
@@ -941,14 +1014,14 @@ int CKingJson::formatText(PKSONNODE pNode) {
 }
 
 int CKingJson::getTextSize(PKSONNODE pNode) {
-    int nTextSize = 0;
+    int nTextSize = 4;
     if (pNode->pName != NULL)
-        nTextSize += (ksonStrLen(pNode->pName) + 4);
+        nTextSize += (((pNode->nFlag & 0X0FFF0000) >> 16) + 4);
     PKSONITEM pItem = GetHeadItem(pNode);
     while (pItem != NULL) {
         if (pItem->pName != NULL)
-            nTextSize += (ksonStrLen(pItem->pName) + 4);
-        nTextSize += (ksonStrLen(pItem->pData) + 4);
+            nTextSize += (((pItem->nFlag & 0X0FFF0000) >> 16) + 4);
+        nTextSize += ((pItem->nFlag & 0XFFFF) + 4);
         pItem = pItem->pNext;
     }
     PKSONNODE pChild = GetHeadNode(pNode);
@@ -959,24 +1032,25 @@ int CKingJson::getTextSize(PKSONNODE pNode) {
     return nTextSize;
 }
 
-int CKingJson::relaseNode(PKSONNODE pNode) {
+int CKingJson::releaseNode(PKSONNODE pNode) {
+    if (pNode == NULL) return -1;
     PKSONITEM pItem = pNode->pHead;
     while (pItem != NULL) {
         if (pItem->pName != NULL && (pItem->pName < m_pTextMem || pItem->pName > m_pTextMem + m_nTextNum)) {
-            m_nTextAlloc -= ksonStrLen(pItem->pName); delete[]pItem->pName; 
+            m_nTextAlloc -= ((pItem->nFlag & 0X0FFF0000) >> 16); delete[]pItem->pName;
         }
         if (pItem->pData != NULL && (pItem->pData < m_pTextMem || pItem->pData > m_pTextMem + m_nTextNum)) {
-            m_nTextAlloc -= ksonStrLen(pItem->pData); delete[]pItem->pData;
+            m_nTextAlloc -= (pItem->nFlag & 0XFFFF); delete[]pItem->pData;
         }
         pItem = pItem->pNext;
     }
     pNode->pHead = NULL; pNode->pItem = NULL;
     if (pNode->pName != NULL && (pNode->pName < m_pTextMem || pNode->pName > m_pTextMem + m_nTextNum)) {
-        m_nTextAlloc -= ksonStrLen(pNode->pName); delete[]pNode->pName; pNode->pName = NULL;
+        m_nTextAlloc -= ((pNode->nFlag & 0X0FFF0000) >> 16); delete[]pNode->pName; pNode->pName = NULL;
     }
     PKSONNODE pHead = GetHeadNode(pNode);
     while (pHead != NULL) {
-        relaseNode(pHead);
+        releaseNode(pHead);
         pHead = pHead->pNext;
     }
     pNode->pNode = NULL; pNode->pPrev = NULL; pNode->pNext = NULL;
@@ -1039,6 +1113,18 @@ int CKingJson::relaseSets(void) {
     return 0;
 }
 
+int CKingJson::releaseAll(void) {
+    releaseNode(&m_ksonRoot);
+    relaseSets();
+    if (m_pTextMem != NULL)
+        delete[]m_pTextMem;
+    m_pTextMem = NULL;
+    if (m_pTextFmt != NULL)
+        delete[]m_pTextFmt;
+    m_pTextFmt = NULL;
+    return 0;
+}
+
 int CKingJson::ksonCompNodeName(const void* arg1, const void* arg2) {
     PKSONNODE pNode1 = *(PKSONNODE*)arg1;
     PKSONNODE pNode2 = *(PKSONNODE*)arg2;
@@ -1061,19 +1147,4 @@ int CKingJson::ksonCompItemData(const void* arg1, const void* arg2) {
     if (pItem1->pData == NULL || pItem2->pData == NULL)
         return 1;
     return strcmp(pItem1->pData, pItem2->pData);
-}
-
-int CKingJson::ksonStrLen(const char* pText) {
-    uint32_t*   pTail = (uint32_t*)pText;
-    uint32_t    nText = 0;
-    uint32_t    nSize = 0;
-    while (true) {
-        nText = *pTail;
-        if (!(nText & 0xff000000) || !(nText & 0xff0000) || !(nText & 0xff00) || !(nText & 0xff))
-            break;
-        nSize += 4; pTail++;
-    }
-    pText = (const char*)pTail;
-    while (*pText++ != 0) nSize++;
-    return nSize;
 }

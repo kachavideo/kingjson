@@ -1,6 +1,7 @@
 # Introduction
-A very simple json parser, bangJson, it has 195 lines code only.
-A fast, simple and powerful tool to parse, modify, create json data.
+There are two json parser class. 
+The bang json is very very simple,  it only has 163 lines code.
+The king json is very fast and powerful tool to parse, modify, export json data. The performance is better than yysjon and simdjson.
 
 # Performance
 Benchmark project and dataset: [yyjson_benchmark](https://github.com/ibireme/yyjson_benchmark)
@@ -15,7 +16,8 @@ Benchmark project and dataset: [yyjson_benchmark](https://github.com/ibireme/yyj
 ### parse 
 1. CKingJson kingJson;
 2. kingJson.OpenFileA("d:/data/data.json", 0);
-3. const char * pValue = kingJson.GetValue(NULL, "name", NULL);
+3. kingJson.ParseData("{...}", 1023, 0);
+4. const char * pValue = kingJson.GetValue(NULL, "name", NULL);
 
 ### create 
 1. CKingJson kingJson;

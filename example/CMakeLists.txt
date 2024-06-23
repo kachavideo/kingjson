@@ -5,5 +5,7 @@ project(kingJson)
 
 add_executable(${PROJECT_NAME} 
                 ../CKingJson.cpp
+                ../CBangJson.cpp
+                ../UTextFunc.cpp
                 ./test.cpp
                 ) 

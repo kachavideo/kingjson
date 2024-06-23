@@ -11,52 +11,33 @@
 *******************************************************************************/
 #ifndef __CKingJson_H__
 #define __CKingJson_H__
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define KSON_DATA_TEXT          0X01000000
-
-#define KSON_NODE_LIST          0X10000000
-
-#define BSON_TEXT_UTF8          0X40000000
-
+#define KSON_DATA_TEXT          0X10000000
+#define KSON_NODE_LIST          0X20000000
+#define KSON_TEXT_UTF8          0X40000000
 #define KSON_NUM_MAX            0X7FFFFFFF
-
-#define BSON_MAX_DEEPS          2000
-
-#define KSON_SKIP_FORMAT_CHAR while(*pText == ' ' || *pText == '\r' || *pText == '\n' || *pText == '\t') pText++
-#define KSON_FIND_NEXTOF_TEXT pNext = ++pText; while((*pNext != '\"' && *pNext != 0) || *(pNext - 1) == '\\') { pNext++; } *pNext++ = 0;
-#define KSON_FIND_NEXTOF_DATA pNext = pText+1; while (*pNext != ',' && *pNext != '}' && *pNext != ']' && *pNext != 0) { pNext++; }
-#define KSON_FILL_FORMAT_TEXT *pTextPos++ = '\"'; while (*pTextTmp != 0) *pTextPos++ = *pTextTmp++; *pTextPos++ = '\"'; *pTextPos++ = ':';
-#define KSON_FILL_FORMAT_DATA if (pItem->nFlag & KSON_DATA_TEXT) *pTextPos++ = '\"'; while (*pTextTmp != 0) *pTextPos++ = *pTextTmp++; if (pItem->nFlag & KSON_DATA_TEXT) *pTextPos++ = '\"';
-
-#define KSON_FIND_NEXTOF_TEXT1          \
-    pNext = ++pText;                    \
-    while (true) {                      \
-        pNext = strchr(pNext, '\"');    \
-        if (pNext == NULL)              \
-            return -1;                  \
-        if (*(pNext - 1) != '\\') {     \
-            *pNext++ = 0; break;  }     \
-        pNext++;                        \
-    }                                   \
+#define KSON_MAX_DEEPS          2048
+#define KSON_VECTOR_SIZE        (sizeof(__m128i))
 
 typedef struct ksonItem {
-    char *      pName = NULL;
-    char *      pData = NULL;
-    int         nFlag = KSON_DATA_TEXT;
-    ksonItem*   pNext = NULL;
+    char*     pName = NULL;
+    char*     pData = NULL;
+    int       nFlag = KSON_DATA_TEXT;
+    ksonItem* pNext = NULL;
 } *PKSONITEM;
 
 typedef struct ksonNode {
-    char *      pName = NULL;
-    int         nFlag = 0;
-    ksonItem*   pHead = NULL;
-    ksonItem*   pItem = NULL;
-    ksonNode*   pNode = NULL;
-    ksonNode*   pPrev = NULL;
-    ksonNode*   pNext = NULL;
-    ksonNode*   pPrnt = NULL;
+    char*     pName = NULL;
+    int       nFlag = 0;
+    ksonItem* pHead = NULL;
+    ksonItem* pItem = NULL;
+    ksonNode* pNode = NULL;
+    ksonNode* pPrev = NULL;
+    ksonNode* pNext = NULL;
+    ksonNode* pPrnt = NULL;
 } *PKSONNODE;
 
 class CKingJson {
@@ -77,7 +58,7 @@ public:
 
     virtual const char* GetValue(PKSONITEM pItem);
     virtual const char* GetValue(PKSONNODE pNode, const char* pName, bool bChild);
-    virtual const char* GetValue(PKSONNODE pNode, const char* pName, bool bChild, const char * pDefault);
+    virtual const char* GetValue(PKSONNODE pNode, const char* pName, bool bChild, const char* pDefault);
     virtual int         GetValueInt(PKSONNODE pNode, const char* pName, bool bChild, int nDefault);
     virtual double      GetValueDbl(PKSONNODE pNode, const char* pName, bool bChild, double dDefault);
     virtual long long   GetValueLng(PKSONNODE pNode, const char* pName, bool bChild, long long lDefault);
@@ -93,7 +74,7 @@ public:
 
     virtual PKSONNODE   AddNode(PKSONNODE pNode, const char* pName, const char* pJson, int nSize);
     virtual PKSONNODE   AddNode(PKSONNODE pNode, const char* pName, bool bList);
-    virtual PKSONITEM   AddItem(PKSONNODE pNode, const char* pName, const char * pValue);
+    virtual PKSONITEM   AddItem(PKSONNODE pNode, const char* pName, const char* pValue);
     virtual PKSONITEM   AddItem(PKSONNODE pNode, const char* pName, int nValue);
     virtual PKSONITEM   AddItem(PKSONNODE pNode, const char* pName, double dValue);
     virtual PKSONITEM   AddItem(PKSONNODE pNode, const char* pName, long long lValue);
@@ -115,7 +96,7 @@ public:
     virtual PKSONITEM   ModItem(PKSONNODE pNode, int nIndex, int nValue);
     virtual PKSONITEM   ModItem(PKSONNODE pNode, int nIndex, double dValue);
     virtual PKSONITEM   ModItem(PKSONNODE pNode, int nIndex, long long lValue);
-    virtual int         ModItem(PKSONITEM pItem, const char * pNewName);
+    virtual int         ModItem(PKSONITEM pItem, const char* pNewName);
 
     virtual int         SortItem(PKSONNODE pNode, bool bName, bool bASC);
     virtual int         SortNode(PKSONNODE pNode, bool bASC);
@@ -125,57 +106,63 @@ public:
     virtual PKSONITEM   GetTailItem(PKSONNODE pNode);
     virtual PKSONNODE   GetTailNode(PKSONNODE pNode);
 
-    virtual const char* FormatText(PKSONNODE pNode, int * pSize);
-    virtual int         SaveToFile(PKSONNODE pNode, const char * pFile);
+    virtual const char* FormatText(PKSONNODE pNode, int* pSize);
+    virtual int         SaveToFile(PKSONNODE pNode, const char* pFile);
 
 protected:
-    virtual PKSONNODE   openFile(FILE * hFile, int nFlag);
-    virtual PKSONNODE   findNode(PKSONNODE pNode, const char* pName, bool bChild);
-    virtual PKSONITEM   findItem(PKSONNODE pNode, const char* pText, bool bName, bool bChild);
-    virtual int         deleteNode(PKSONNODE pNode);
-    virtual int         deleteItem(PKSONNODE pNode, PKSONITEM pItem);
-    virtual PKSONNODE   addNewNode(PKSONNODE pNode, const char* pName, bool bList);
-    virtual PKSONITEM   addNewItem(PKSONNODE pNode, const char* pName, const char* pData, int nLen, bool bText, int nIndex);
-    virtual int         modifyItem(PKSONITEM pItem, const char * pText, bool bName);
+    PKSONNODE   openFile(FILE* hFile, int nFlag);
+    PKSONNODE   findNode(PKSONNODE pNode, const char* pName, bool bChild);
+    PKSONITEM   findItem(PKSONNODE pNode, const char* pText, bool bName, bool bChild);
+    int         deleteNode(PKSONNODE pNode);
+    int         deleteItem(PKSONNODE pNode, PKSONITEM pItem);
+    PKSONNODE   parseNewJson(PKSONNODE pNode, char* pData, int nSize);
+    PKSONNODE   addNewNode(PKSONNODE pNode, const char* pName, int nNameLen, int nType);
+    PKSONITEM   addNewItem(PKSONNODE pNode, const char* pName, int nNameLen, const char* pData, int nDataLen, int nType, int nIndex);
+    int         modifyItem(PKSONITEM pItem, const char* pText, bool bName);
 
-    virtual int         parseJson(PKSONNODE pNode, char* pData, bool bNewNode);
-    virtual PKSONNODE   appendNode(PKSONNODE pNode, char* pName, bool bList);
-    virtual PKSONITEM   appendItem(PKSONNODE pNode, char* pName, char* pData, bool bText);
+    int                 parseJson(char* pData, int nSize);
+    inline PKSONNODE    appendNode(PKSONNODE pNode, char* pName, int nNameLen, int nType);
+    inline PKSONITEM    appendItem(PKSONNODE pNode, char* pName, int nNameLen, char* pData, int nDataLen, int nType);
 
-    virtual int         convertTxt(char* pData);
-    virtual uint32_t    convertNum(const char* pText);
+    inline char*        skipFormat(char* pText, char* pLast);
+    inline char*        searchName(char* pText, char* pLast);
+    inline char*        searchText(char* pText, char* pLast);
+    inline char*        searchData(char* pText, char* pLast);
+    inline uint32_t     forwardPos(uint32_t mask);
 
-    virtual int         formatText(PKSONNODE pNode);
-    virtual int         getTextSize(PKSONNODE pNode);
-    virtual int         relaseNode(PKSONNODE pNode);
-    virtual int         addItemSet(void);
-    virtual int         addNodeSet(void);
-    virtual int         relaseSets(void);
+    int         convertTxt(char* pData);
+    uint32_t    convertNum(const char* pText);
+    int         formatText(PKSONNODE pNode);
+    int         getTextSize(PKSONNODE pNode);
+    int         releaseNode(PKSONNODE pNode);
+    int         addItemSet(void);
+    int         addNodeSet(void);
+    int         relaseSets(void);
+    int         releaseAll(void);
 
-    static int          ksonCompNodeName(const void* arg1, const void* arg2);
-    static int          ksonCompItemName(const void* arg1, const void* arg2);
-    static int          ksonCompItemData(const void* arg1, const void* arg2);
-    static int          ksonStrLen(const char* pText);
+    static int  ksonCompNodeName(const void* arg1, const void* arg2);
+    static int  ksonCompItemName(const void* arg1, const void* arg2);
+    static int  ksonCompItemData(const void* arg1, const void* arg2);
 
 protected:
     typedef struct itemSet {
-        char*       pBuff = NULL;
-        itemSet*    pNext = NULL;
+        char*    pBuff = NULL;
+        itemSet* pNext = NULL;
     } *PITEMSET;
-    PKSONITEM   m_pSetItem = NULL;
+    PKSONITEM    m_pSetItem = NULL;
+
     typedef struct nodeSet {
-        char*       pBuff = NULL;
-        nodeSet*    pNext = NULL;
+        char*    pBuff = NULL;
+        nodeSet* pNext = NULL;
     } *PNODESET;
-    PKSONNODE   m_pSetNode = NULL;
-    int m_nSetSize = 32768;
+    PKSONNODE    m_pSetNode = NULL;
+    int          m_nSetSize = 2048;
 
 protected:
     ksonNode        m_ksonRoot;
     ksonNode*       m_pTxtNode = NULL;
     char*           m_pTextMem = NULL;
     int             m_nTextNum = 0;
-    int             m_nNodeDep = 0;
 
     char*           m_pTextFmt = NULL;
     char*           m_pTextPos = NULL;
