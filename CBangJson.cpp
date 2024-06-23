@@ -1,5 +1,5 @@
 // 2024-06-07		kacha video			Create file
-#include "string.h"
+
 #include "CBangJson.h"
 
 CBangJson::CBangJson(void) {}
@@ -13,11 +13,7 @@ PBSONNODE CBangJson::Parser(const char* pData, int nSize, int nFlag) {
     if (pData == NULL || nSize < 2) return NULL;
     if (m_pRoot != NULL) Delete(m_pRoot);
     m_pRoot = new bsonNode();
-    char* pText = new char[nSize + 1];
-    memcpy(pText, pData, nSize);
-    pText[nSize] = 0;
-    int nErr = parserData(m_pRoot, pText, nSize);
-    delete[]pText;
+    int nErr = parserData(m_pRoot, pData, nSize);
     return nErr > 0 ? m_pRoot : NULL;
 }
 
@@ -50,22 +46,18 @@ int CBangJson::Delete(PBSONNODE pNode) {
     return 1;
 }
 
-#define BANG_SKIP_FORMAT_CHAR while(*pText <= ' ' && *pText != 0) pText++
-#define BANG_FIND_NEXTOF_TEXT pNext = ++pText; while((*pNext != '\"' && *pNext != 0) || *(pNext - 1) == '\\') pNext++;
-#define BANG_FIND_NEXTOF_DATA pNext = pText+1; while (*pNext != ',' && *pNext != '}' && *pNext != ']' && *pNext != 0) pNext++;
-
-int CBangJson::parserData(PBSONNODE pNode, char* pData, int nSize) {
+int CBangJson::parserData(PBSONNODE pNode, const char* pData, int nSize) {
     int   nDeep = 0;
     int   nName = 0;
-    char* pName = NULL;
-    char* pLast = pData + nSize;
-    char* pText = pData;
-    char* pNext = pData;
-    BANG_SKIP_FORMAT_CHAR;
+    const char* pName = NULL;
+    const char* pLast = pData + nSize;
+    const char* pText = pData;
+    const char* pNext = pData;
+    BSON_SKIP_FORMAT_CHAR;
     if (*pText != '{' && *pText != '[') return -1;
     pNode->uFlag = *pText++ == '[' ? BSON_TYPE_LIST : BSON_TYPE_NODE;
     while (pText < pLast) {
-        BANG_SKIP_FORMAT_CHAR;
+        BSON_SKIP_FORMAT_CHAR;
         if (*pText == '{' || *pText == '[') {
             if (nDeep++ > BSON_MAX_DEEPS) return -1;
             pNode = createNode(pNode, pName, nName, NULL, 0, *pText++ == '[' ? BSON_TYPE_LIST : BSON_TYPE_NODE);
@@ -73,12 +65,12 @@ int CBangJson::parserData(PBSONNODE pNode, char* pData, int nSize) {
         }
         else if (*pText == '}' || *pText == ']') {
             if (pNode->pParent == NULL) break;
-            *pText++ = 0; if (*pText == ',') pText++;
+            if (*++pText == ',') pText++;
             pNode = pNode->pParent; nDeep--;
         }
         else if (*pText == '"') {
-            BANG_FIND_NEXTOF_TEXT;
-            nName = (int)(pNext - pText); *pNext++ = 0;
+            BSON_FIND_NEXTOF_TEXT;
+            nName = (int)(pNext++ - pText);
             if (pNode->uFlag & BSON_TYPE_LIST) {
                 createNode(pNode, NULL, 0, pText, nName, BSON_TYPE_ITEM | BSON_TYPE_TEXT);
                 pText = (*pNext == ',') ? pNext + 1 : pNext;
@@ -87,24 +79,22 @@ int CBangJson::parserData(PBSONNODE pNode, char* pData, int nSize) {
                 pName = pText; pText = pNext + 1;
                 while (*pText <= 0X20) pText++;
                 if (*pText == '"') {
-                    BANG_FIND_NEXTOF_TEXT;
+                    BSON_FIND_NEXTOF_TEXT;
                     createNode(pNode, pName, nName, pText, (int)(pNext - pText), BSON_TYPE_ITEM | BSON_TYPE_TEXT);
-                    *pNext++ = 0; pText = (*pNext == ',') ? pNext + 1 : pNext;
+                    pText = (*++pNext == ',') ? pNext + 1 : pNext;
                 }
             }
         }
         else {
-            BANG_FIND_NEXTOF_DATA;
+            BSON_FIND_NEXTOF_DATA;
             createNode(pNode, pName, nName, pText, (int)(pNext - pText), BSON_TYPE_ITEM | BSON_TYPE_DATA);
-            if (*pNext == ',' || *pNext <= ' ')
-                *pNext++ = 0;
-            pText = pNext;
+            pText = *pNext == ',' ? pNext + 1 : pNext;
         }
     }
     return (int)(pText - pData);
 }
 
-PBSONNODE CBangJson::createNode(PBSONNODE pNode, char* pName, int nNameLen, char* pData, int nDataLen, int nType) {
+PBSONNODE CBangJson::createNode(PBSONNODE pNode, const char* pName, int nNameLen, const char* pData, int nDataLen, int nType) {
     PBSONNODE pNewNode = new bsonNode();
     if (((pNode->uFlag & BSON_TYPE_LIST) == 0) && pName != NULL && nNameLen > 0)
          pNewNode->strName = std::string(pName, pName + nNameLen);

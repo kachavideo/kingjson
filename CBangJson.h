@@ -12,7 +12,12 @@
 #define BSON_TYPE_LIST          0X0020
 #define BSON_TYPE_ITEM          0X0040
 
-#define BSON_MAX_DEEPS          2000
+#define BSON_MAX_DEEPS          2048
+
+#define BSON_SKIP_FORMAT_CHAR while(*pText <= ' ' && *pText != 0) pText++
+#define BSON_FIND_NEXTOF_TEXT pNext = ++pText; while((*pNext != '\"' && *pNext != 0) || *(pNext - 1) == '\\') pNext++;
+#define BSON_FIND_NEXTOF_DATA pNext = pText+1; while (*pNext != ',' && *pNext != '}' && *pNext != ']' && *pNext != 0) pNext++;
+
 
 typedef struct bsonNode {
     std::string             strName;
@@ -33,8 +38,8 @@ public:
     virtual int         Delete(PBSONNODE pNode);
 
 protected:
-    virtual int         parserData(PBSONNODE pNode, char* pData, int nSize);
-    virtual PBSONNODE   createNode(PBSONNODE pNode, char* pName, int nNameLen, char * pData, int nDataLen, int nType);
+    virtual int         parserData(PBSONNODE pNode, const char* pData, int nSize);
+    virtual PBSONNODE   createNode(PBSONNODE pNode, const char* pName, int nNameLen, const char * pData, int nDataLen, int nType);
     virtual PBSONNODE   searchNode(PBSONNODE pNode, const char* pName, bool bChild);
     virtual int         formatJson(PBSONNODE pNode);
     virtual int         deleteNode(PBSONNODE pNode);
